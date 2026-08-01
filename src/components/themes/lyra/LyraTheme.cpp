@@ -25,9 +25,11 @@
 #include "components/icons/library.h"
 #include "components/icons/recent.h"
 #include "components/icons/settings2.h"
+#include "components/icons/statistics.h"
 #include "components/icons/text24.h"
 #include "components/icons/transfer.h"
 #include "components/icons/wifi.h"
+#include "components/themes/BaseTheme.h"
 #include "fontIds.h"
 
 // Internal constants
@@ -77,6 +79,8 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return HotspotIcon;
       case UIIcon::Bookmark:
         return BookmarkIcon;
+      case UIIcon::Statistics:
+        return StatisticsIcon;
       default:
         return nullptr;
     }
