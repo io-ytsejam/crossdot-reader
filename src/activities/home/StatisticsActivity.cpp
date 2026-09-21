@@ -41,7 +41,7 @@ void StatisticsActivity::focusSelectedDayBooks() {
 
   focus = Focus::Book;
   selectedBookIndex = 0;
-  ensureSelectionVisible(contentBottom() - contentTop());
+  ensureSelectionVisible(historyHeight());
   requestUpdate();
 }
 
@@ -90,6 +90,17 @@ int StatisticsActivity::contentBottom() const {
   const auto& metrics = UITheme::getInstance().getMetrics();
   return renderer.getScreenHeight() - metrics.buttonHintsHeight - metrics.verticalSpacing;
 }
+
+bool StatisticsActivity::streakBannerVisible() const { return history.clockAvailable && history.currentStreak > 0; }
+
+int StatisticsActivity::streakBannerHeight() const {
+  // Text line plus vertical breathing room above and below.
+  return renderer.getLineHeight(UI_10_FONT_ID) + 16;
+}
+
+int StatisticsActivity::historyTop() const { return contentTop() + (streakBannerVisible() ? streakBannerHeight() : 0); }
+
+int StatisticsActivity::historyHeight() const { return contentBottom() - historyTop(); }
 
 void StatisticsActivity::ensureSelectionVisible(const int contentHeight) {
   if (history.days.empty()) {
@@ -223,6 +234,17 @@ void StatisticsActivity::drawGoalRing(const int cx, const int cy, const int radi
   }
 }
 
+// One-line summary above the day list: current streak of consecutive days
+// with the 10-minute goal met, e.g. "5 day streak". Hidden while the streak
+// is zero so an idle device does not advertise an empty state.
+void StatisticsActivity::drawStreakBanner(const int y) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const std::string label = std::to_string(history.currentStreak) + " " + tr(STR_STATISTICS_STREAK);
+  const auto visible = renderer.truncatedText(
+      UI_10_FONT_ID, label.c_str(), renderer.getScreenWidth() - metrics.contentSidePadding * 2, EpdFontFamily::BOLD);
+  renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, y + 8, visible.c_str(), true, EpdFontFamily::BOLD);
+}
+
 void StatisticsActivity::renderHistory(const int contentTop, const int contentBottom) {
   if (history.days.empty()) {
     const int middle = contentTop + (contentBottom - contentTop) / 2;
@@ -296,7 +318,8 @@ void StatisticsActivity::render(RenderLock&&) {
     renderer.drawCenteredText(UI_12_FONT_ID, middle - 18, tr(STR_STATISTICS_UNAVAILABLE), true, EpdFontFamily::BOLD);
     renderer.drawCenteredText(UI_10_FONT_ID, middle + 16, tr(STR_STATISTICS_CLOCK_REQUIRED));
   } else {
-    renderHistory(top, bottom);
+    if (streakBannerVisible()) drawStreakBanner(top);
+    renderHistory(historyTop(), bottom);
   }
 
   const auto labels =
@@ -307,7 +330,7 @@ void StatisticsActivity::render(RenderLock&&) {
 }
 
 void StatisticsActivity::loop() {
-  const int contentHeight = contentBottom() - contentTop();
+  const int contentHeight = historyHeight();
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (focus == Focus::Book) {
@@ -337,7 +360,7 @@ void StatisticsActivity::loop() {
     return;
   }
 
-  handleTouch(contentTop(), contentHeight);
+  handleTouch(historyTop(), contentHeight);
 
   const auto swipe = mappedInput.wasSwipe();
   if (swipe == MappedInputManager::SwipeDir::Up) {

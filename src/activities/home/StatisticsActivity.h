@@ -34,8 +34,13 @@ class StatisticsActivity final : public Activity {
   int totalHistoryHeight() const;
   int contentTop() const;
   int contentBottom() const;
+  bool streakBannerVisible() const;
+  int streakBannerHeight() const;
+  int historyTop() const;
+  int historyHeight() const;
 
   void renderHistory(int contentTop, int contentBottom);
+  void drawStreakBanner(int y);
   void drawDayHeader(const DailyReadingStatistics& day, int y, int height, bool selected);
   void drawBookRow(const BookReadingStatistics& book, int y, int height, bool selected);
   void drawGoalRing(int cx, int cy, int radius, int stroke, float fraction) const;
