@@ -41,6 +41,11 @@ constexpr Date civilFromDays(int64_t days) {
   return {year, month, day};
 }
 
+// Day of week for a day number, Monday=0 .. Sunday=6. The Unix epoch day 0
+// (1970-01-01) was a Thursday. The +7 keeps the modulo correct for negative
+// day numbers (dates before 1970).
+constexpr int weekdayFromDayNumber(const int64_t dayNumber) { return static_cast<int>(((dayNumber % 7) + 10) % 7); }
+
 inline int64_t floorDay(const int64_t localEpochSeconds) {
   if (localEpochSeconds >= 0) return localEpochSeconds / SECONDS_PER_DAY;
   return (localEpochSeconds - (SECONDS_PER_DAY - 1)) / SECONDS_PER_DAY;

@@ -26,6 +26,7 @@ lib/EpdFont/scripts/output/
 .claude/*
 !.claude/skills/
 /managed_components
+/firmware.bin
 /.dummy
 /CMakeLists.txt
 /dependencies.lock

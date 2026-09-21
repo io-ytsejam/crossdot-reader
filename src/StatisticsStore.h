@@ -26,7 +26,8 @@ struct DailyReadingStatistics {
 struct ReadingStatisticsHistory {
   bool clockAvailable = false;
   std::string todayDate;
-  int currentStreak = 0;  // Consecutive goal-met days ending today (or yesterday).
+  int64_t todayDayNumber = 0;  // Local civil day "now"; enables relative day labels.
+  int currentStreak = 0;       // Consecutive goal-met days ending today (or yesterday).
   std::vector<DailyReadingStatistics> days;
 };
 

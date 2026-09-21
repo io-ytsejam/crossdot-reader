@@ -22,6 +22,14 @@ TEST(ReadingTimeCalendar, AppliesPositiveAndNegativeUtcOffsetsAcrossDays) {
   EXPECT_EQ(ReadingTime::floorDay(west), utcDay - 1);
 }
 
+TEST(ReadingTimeCalendar, ComputesWeekdayFromDayNumber) {
+  // Unix epoch day 0 (1970-01-01) was a Thursday; Monday=0 .. Sunday=6.
+  EXPECT_EQ(ReadingTime::weekdayFromDayNumber(0), 3);
+  EXPECT_EQ(ReadingTime::weekdayFromDayNumber(-1), 2);  // 1969-12-31, Wednesday
+  EXPECT_EQ(ReadingTime::weekdayFromDayNumber(ReadingTime::daysFromCivil(2026, 9, 21)), 0);
+  EXPECT_EQ(ReadingTime::weekdayFromDayNumber(ReadingTime::daysFromCivil(2024, 2, 29)), 3);
+}
+
 TEST(ReadingTimeAccumulator, CountsOpenAndCloseInterval) {
   ReadingTime::Accumulator accumulator;
   accumulator.begin(ReadingTime::daysFromCivil(2026, 9, 21) * ReadingTime::SECONDS_PER_DAY, 1000);

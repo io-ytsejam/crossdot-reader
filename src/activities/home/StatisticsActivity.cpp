@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <iterator>
 
 #include "GfxRenderer.h"
 #include "MappedInputManager.h"
@@ -14,6 +16,40 @@
 #include "components/UITheme.h"
 #include "components/icons/cover.h"
 #include "fontIds.h"
+
+namespace {
+// Day-header labels for the statistics list: Today, Yesterday, a weekday name
+// for the recent past (2-6 days back), then day + abbreviated month, gaining
+// the year once it differs from the current one ("22 Jan 2025").
+constexpr StrId WEEKDAY_IDS[] = {StrId::STR_WEEKDAY_MONDAY,   StrId::STR_WEEKDAY_TUESDAY, StrId::STR_WEEKDAY_WEDNESDAY,
+                                 StrId::STR_WEEKDAY_THURSDAY, StrId::STR_WEEKDAY_FRIDAY,  StrId::STR_WEEKDAY_SATURDAY,
+                                 StrId::STR_WEEKDAY_SUNDAY};
+static_assert(std::size(WEEKDAY_IDS) == 7);
+
+constexpr StrId MONTH_IDS[] = {StrId::STR_MONTH_JAN, StrId::STR_MONTH_FEB, StrId::STR_MONTH_MAR, StrId::STR_MONTH_APR,
+                               StrId::STR_MONTH_MAY, StrId::STR_MONTH_JUN, StrId::STR_MONTH_JUL, StrId::STR_MONTH_AUG,
+                               StrId::STR_MONTH_SEP, StrId::STR_MONTH_OCT, StrId::STR_MONTH_NOV, StrId::STR_MONTH_DEC};
+static_assert(std::size(MONTH_IDS) == 12);
+
+std::string formatDayTitle(const DailyReadingStatistics& day, const int64_t todayDayNumber) {
+  const int64_t daysAgo = todayDayNumber - day.dayNumber;
+  if (daysAgo == 0) return tr(STR_STATISTICS_TODAY);
+  if (daysAgo == 1) return tr(STR_STATISTICS_YESTERDAY);
+  if (daysAgo >= 2 && daysAgo <= 6) {
+    return I18N.get(WEEKDAY_IDS[ReadingTime::weekdayFromDayNumber(day.dayNumber)]);
+  }
+
+  const ReadingTime::Date date = ReadingTime::civilFromDays(day.dayNumber);
+  const int currentYear = ReadingTime::civilFromDays(todayDayNumber).year;
+  char buffer[32];
+  if (date.year == currentYear) {
+    snprintf(buffer, sizeof(buffer), "%u %s", date.day, I18N.get(MONTH_IDS[date.month - 1]));
+  } else {
+    snprintf(buffer, sizeof(buffer), "%u %s %d", date.day, I18N.get(MONTH_IDS[date.month - 1]), date.year);
+  }
+  return buffer;
+}
+}  // namespace
 
 void StatisticsActivity::enrichSelectedDayBooks() {
   if (selectedDayIndex < 0 || selectedDayIndex >= static_cast<int>(history.days.size())) return;
@@ -139,8 +175,7 @@ void StatisticsActivity::drawDayHeader(const DailyReadingStatistics& day, const 
       day.goalMet ? 1.0f : static_cast<float>(day.totalSeconds) / static_cast<float>(ReadingTime::DAILY_GOAL_SECONDS);
   drawGoalRing(ringCx, y + height / 2, kRingRadius, kRingStroke, goalFraction);
 
-  const std::string title =
-      day.date == history.todayDate ? std::string(tr(STR_STATISTICS_TODAY)) + " (" + day.date + ")" : day.date;
+  const std::string title = formatDayTitle(day, history.todayDayNumber);
   const std::string duration = ReadingTime::formatDuration(day.totalSeconds);
   const int valueWidth = renderer.getTextWidth(UI_10_FONT_ID, duration.c_str());
   const int textX = ringCx + kRingRadius + 10;

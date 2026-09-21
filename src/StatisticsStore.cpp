@@ -112,7 +112,11 @@ bool StatisticsStore::appendSession(const ReadingTime::DayFragment& fragment, co
   }
 
   doc["date"] = ReadingTime::dateString(fragment.dayNumber);
-  JsonArray sessions = doc["sessions"].to<JsonArray>();
+  // Preserve sessions already persisted for this day. to<JsonArray>() would
+  // clear the array (ArduinoJson's to<T>() first calls clear()), so only use it
+  // to create the array when the key is absent; otherwise reuse the parsed one.
+  JsonArray sessions = doc["sessions"].as<JsonArray>();
+  if (sessions.isNull()) sessions = doc["sessions"].to<JsonArray>();
   JsonObject session = sessions.add<JsonObject>();
   session["path"] = path;
   session["title"] = title;
@@ -191,6 +195,7 @@ ReadingStatisticsHistory StatisticsStore::getHistory() {
   result.clockAvailable = true;
   const int64_t today = ReadingTime::floorDay(localEpoch);
   result.todayDate = ReadingTime::dateString(today);
+  result.todayDayNumber = today;
   pruneOldFiles(today);
 
   const int64_t oldestKeptDay = today - (RETENTION_DAYS - 1);
