@@ -30,8 +30,17 @@ struct ReadingStatisticsHistory {
   std::vector<DailyReadingStatistics> days;
 };
 
+struct ReadingStatisticsVisitResult {
+  bool clockAvailable = false;
+  bool completed = true;
+  int64_t todayDayNumber = 0;
+  int currentStreak = 0;
+};
+
 class StatisticsStore {
  public:
+  using DayVisitor = bool (*)(void* context, const DailyReadingStatistics& day);
+
   static StatisticsStore& getInstance();
 
   StatisticsStore(const StatisticsStore&) = delete;
@@ -43,6 +52,7 @@ class StatisticsStore {
   void endReading();
 
   ReadingStatisticsHistory getHistory();
+  ReadingStatisticsVisitResult visitHistory(void* context, DayVisitor visitor);
   void updateBookPath(const std::string& oldPath, const std::string& newPath);
 
  private:

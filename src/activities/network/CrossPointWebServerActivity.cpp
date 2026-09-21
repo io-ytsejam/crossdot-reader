@@ -391,6 +391,7 @@ void CrossPointWebServerActivity::render(RenderLock&&) {
 void CrossPointWebServerActivity::renderServerRunning() const {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto pageWidth = renderer.getScreenWidth();
+  const auto pageHeight = renderer.getScreenHeight();
 
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
                  isApMode ? tr(STR_HOTSPOT_MODE) : tr(STR_FILE_TRANSFER), nullptr);
@@ -461,6 +462,18 @@ void CrossPointWebServerActivity::renderServerRunning() const {
     // Also show hostname URL
     std::string hostnameUrl = std::string(tr(STR_OR_HTTP_PREFIX)) + AP_HOSTNAME + ".local/";
     renderer.drawCenteredText(SMALL_FONT_ID, startY, hostnameUrl.c_str(), true);
+  }
+
+  if (webServer) {
+    const char* pairingCode = webServer->getStatisticsPairingCode();
+    char groupedCode[StatisticsSessionAuth::OTP_DIGITS + 2];
+    snprintf(groupedCode, sizeof(groupedCode), "%.4s %.4s", pairingCode, pairingCode + 4);
+    const int codeLineHeight = renderer.getLineHeight(UI_12_FONT_ID);
+    const int labelLineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+    const int codeY = pageHeight - metrics.buttonHintsHeight - codeLineHeight - metrics.verticalSpacing;
+    const int labelY = codeY - labelLineHeight - metrics.verticalSpacing;
+    renderer.drawCenteredText(UI_10_FONT_ID, labelY, tr(STR_STATISTICS_EXPORT_CODE), true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_12_FONT_ID, codeY, groupedCode, true, EpdFontFamily::BOLD);
   }
 
   const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");

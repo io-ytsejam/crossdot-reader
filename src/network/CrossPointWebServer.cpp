@@ -8,15 +8,19 @@
 #include <WiFi.h>
 #include <esp_efuse.h>
 #include <esp_efuse_table.h>
+#include <esp_random.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <string_view>
 
 #include "CrossPointSettings.h"
 #include "FontInstaller.h"
 #include "OpdsServerStore.h"
 #include "SdCardFontSystem.h"
 #include "SettingsList.h"
+#include "StatisticsStore.h"
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
 #include "html/FilesPageHtml.generated.h"
@@ -79,6 +83,134 @@ bool isProtectedItemName(const String& name) {
     }
   }
   return false;
+}
+
+class ChunkedJsonWriter {
+ public:
+  explicit ChunkedJsonWriter(WebServer& server) : server(server) {}
+  ~ChunkedJsonWriter() { flush(); }
+
+  bool write(const char* data, size_t length) {
+    while (length > 0 && good()) {
+      const size_t available = sizeof(buffer) - used;
+      const size_t count = std::min(length, available);
+      memcpy(buffer + used, data, count);
+      used += count;
+      data += count;
+      length -= count;
+      if (used == sizeof(buffer) && !flush()) return false;
+    }
+    return good();
+  }
+
+  bool write(const char* text) { return write(text, strlen(text)); }
+
+  bool writeJsonString(const std::string_view value) {
+    if (!write("\"")) return false;
+    for (const unsigned char character : value) {
+      switch (character) {
+        case '"':
+          if (!write("\\\"")) return false;
+          break;
+        case '\\':
+          if (!write("\\\\")) return false;
+          break;
+        case '\b':
+          if (!write("\\b")) return false;
+          break;
+        case '\f':
+          if (!write("\\f")) return false;
+          break;
+        case '\n':
+          if (!write("\\n")) return false;
+          break;
+        case '\r':
+          if (!write("\\r")) return false;
+          break;
+        case '\t':
+          if (!write("\\t")) return false;
+          break;
+        default:
+          if (character < 0x20) {
+            char escaped[7];
+            snprintf(escaped, sizeof(escaped), "\\u%04x", character);
+            if (!write(escaped)) return false;
+          } else if (!write(reinterpret_cast<const char*>(&character), 1)) {
+            return false;
+          }
+      }
+    }
+    return write("\"");
+  }
+
+  bool writeUnsigned(const uint32_t value) {
+    char number[11];
+    const int length = snprintf(number, sizeof(number), "%lu", static_cast<unsigned long>(value));
+    return length > 0 && write(number, static_cast<size_t>(length));
+  }
+
+  bool writeSigned(const int64_t value) {
+    char number[22];
+    const int length = snprintf(number, sizeof(number), "%lld", static_cast<long long>(value));
+    return length > 0 && write(number, static_cast<size_t>(length));
+  }
+
+  bool flush() {
+    if (used == 0) return good();
+    if (!server.client().connected()) {
+      failed = true;
+      used = 0;
+      return false;
+    }
+    resetTaskWatchdogIfSubscribed();
+    server.sendContent(buffer, used);
+    resetTaskWatchdogIfSubscribed();
+    used = 0;
+    return true;
+  }
+
+  bool good() const { return !failed; }
+
+ private:
+  WebServer& server;
+  char buffer[160];
+  size_t used = 0;
+  bool failed = false;
+};
+
+struct StatisticsExportContext {
+  ChunkedJsonWriter* writer;
+  bool firstDay = true;
+};
+
+bool writeStatisticsDay(void* opaqueContext, const DailyReadingStatistics& day) {
+  resetTaskWatchdogIfSubscribed();
+  auto& context = *static_cast<StatisticsExportContext*>(opaqueContext);
+  auto& writer = *context.writer;
+
+  if (!context.firstDay && !writer.write(",")) return false;
+  context.firstDay = false;
+  if (!writer.write("{\"date\":")) return false;
+  if (!writer.writeJsonString(day.date)) return false;
+  if (!writer.write(",\"totalSeconds\":")) return false;
+  if (!writer.writeUnsigned(day.totalSeconds)) return false;
+  if (!writer.write(day.goalMet ? ",\"goalMet\":true,\"books\":[" : ",\"goalMet\":false,\"books\":[")) return false;
+
+  bool firstBook = true;
+  for (const auto& book : day.books) {
+    if (!firstBook && !writer.write(",")) return false;
+    firstBook = false;
+    if (!writer.write("{\"title\":")) return false;
+    if (!writer.writeJsonString(book.title)) return false;
+    if (!writer.write(",\"author\":")) return false;
+    if (!writer.writeJsonString(book.author)) return false;
+    if (!writer.write(",\"activeSeconds\":")) return false;
+    if (!writer.writeUnsigned(book.activeSeconds)) return false;
+    if (!writer.write(",\"lastReadAt\":")) return false;
+    if (!writer.writeSigned(book.lastReadAt)) return false;
+    if (!writer.write("}")) return false;
+  }
+  return writer.write("]}");
 }
 }  // namespace
 
@@ -144,6 +276,8 @@ void CrossPointWebServer::begin() {
   server->on("/js/jszip.min.js", HTTP_GET, [this] { handleJszip(); });
 
   server->on("/api/status", HTTP_GET, [this] { handleStatus(); });
+  server->on("/api/statistics/auth", HTTP_POST, [this] { handleStatisticsAuth(); });
+  server->on("/api/statistics", HTTP_GET, [this] { handleStatisticsExport(); });
   server->on("/api/files", HTTP_GET, [this] { handleFileListData(); });
   server->on("/download", HTTP_GET, [this] { handleDownload(); });
 
@@ -187,12 +321,14 @@ void CrossPointWebServer::begin() {
   LOG_DBG("WEB", "[MEM] Free heap after route setup: %d bytes", ESP.getFreeHeap());
 
   // Collect WebDAV headers and register handler
-  const char* davHeaders[] = {"Depth", "Destination", "Overwrite", "If", "Lock-Token", "Timeout"};
-  server->collectHeaders(davHeaders, 6);
+  const char* requestHeaders[] = {"Depth",      "Destination", "Overwrite",     "If",
+                                  "Lock-Token", "Timeout",     "Authorization", "X-CrossPoint-OTP"};
+  server->collectHeaders(requestHeaders, std::size(requestHeaders));
   server->addHandler(new WebDAVHandler());  // Note: WebDAVHandler will be deleted by WebServer when server is stopped
   LOG_DBG("WEB", "WebDAV handler initialized");
 
   server->begin();
+  initializeStatisticsAuth();
 
   // Start WebSocket server for fast binary uploads
   LOG_DBG("WEB", "Starting WebSocket server on port %d...", wsPort);
@@ -240,6 +376,7 @@ void CrossPointWebServer::abortWsUpload(const char* tag) {
 }
 
 void CrossPointWebServer::stop() {
+  statisticsAuth.clear();
   if (!running || !server) {
     LOG_DBG("WEB", "stop() called but already stopped (running=%d, server=%p)", running, server.get());
     if (watchdogTaskRegistered) {
@@ -433,6 +570,104 @@ void CrossPointWebServer::handleStatus() const {
   String response;
   serializeJson(doc, response);
   server->send(200, "application/json", response);
+}
+
+void CrossPointWebServer::initializeStatisticsAuth() {
+  constexpr uint32_t OTP_RANGE = 100000000;
+  constexpr uint32_t OTP_RANDOM_LIMIT = UINT32_MAX - (UINT32_MAX % OTP_RANGE);
+  uint32_t randomValue = 0;
+  do {
+    randomValue = esp_random();
+  } while (randomValue >= OTP_RANDOM_LIMIT);
+
+  char otp[StatisticsSessionAuth::OTP_DIGITS + 1];
+  snprintf(otp, sizeof(otp), "%08lu", static_cast<unsigned long>(randomValue % OTP_RANGE));
+
+  uint8_t randomToken[StatisticsSessionAuth::TOKEN_HEX_DIGITS / 2];
+  esp_fill_random(randomToken, sizeof(randomToken));
+  char token[StatisticsSessionAuth::TOKEN_HEX_DIGITS + 1];
+  static constexpr char HEX_DIGITS[] = "0123456789abcdef";
+  for (size_t index = 0; index < sizeof(randomToken); ++index) {
+    token[index * 2] = HEX_DIGITS[randomToken[index] >> 4];
+    token[index * 2 + 1] = HEX_DIGITS[randomToken[index] & 0x0F];
+  }
+  token[sizeof(token) - 1] = '\0';
+  statisticsAuth.start(otp, token);
+  memset(randomToken, 0, sizeof(randomToken));
+  memset(token, 0, sizeof(token));
+}
+
+void CrossPointWebServer::handleStatisticsAuth() {
+  server->sendHeader("Cache-Control", "no-store");
+  const String suppliedOtp = server->header("X-CrossPoint-OTP");
+  const auto result =
+      statisticsAuth.pair(std::string_view(suppliedOtp.c_str(), suppliedOtp.length()), static_cast<uint32_t>(millis()));
+
+  switch (result) {
+    case StatisticsSessionAuth::PairResult::Success: {
+      char response[96];
+      const int length = snprintf(response, sizeof(response),
+                                  "{\"token\":\"%s\",\"tokenType\":\"Bearer\",\"expires\":\"server-stop\"}",
+                                  statisticsAuth.bearerToken());
+      if (length <= 0 || static_cast<size_t>(length) >= sizeof(response)) {
+        LOG_ERR("WEB", "Failed to format statistics auth response");
+        server->send(500, "application/json", "{\"error\":\"internal error\"}");
+        return;
+      }
+      server->send(200, "application/json", response);
+      LOG_INF("WEB", "Statistics client paired");
+      return;
+    }
+    case StatisticsSessionAuth::PairResult::InvalidCode:
+      server->send(403, "application/json", "{\"error\":\"invalid one-time code\"}");
+      return;
+    case StatisticsSessionAuth::PairResult::RateLimited:
+      server->sendHeader("Retry-After", "1");
+      server->send(429, "application/json", "{\"error\":\"try again later\"}");
+      return;
+    case StatisticsSessionAuth::PairResult::AlreadyPaired:
+      server->send(409, "application/json", "{\"error\":\"one-time code already used\"}");
+      return;
+  }
+}
+
+void CrossPointWebServer::handleStatisticsExport() const {
+  const String authorization = server->header("Authorization");
+  if (!statisticsAuth.authorize(std::string_view(authorization.c_str(), authorization.length()))) {
+    server->sendHeader("Cache-Control", "no-store");
+    server->sendHeader("WWW-Authenticate", "Bearer");
+    server->send(401, "application/json", "{\"error\":\"unauthorized\"}");
+    return;
+  }
+
+  LOG_DBG("WEB", "[MEM] Statistics export start: free=%u largest=%u", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+  server->sendHeader("Cache-Control", "no-store");
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+
+  ChunkedJsonWriter writer(*server);
+  StatisticsExportContext context{&writer};
+  writer.write("{\"schemaVersion\":1,\"days\":[");
+  const auto summary = READING_STATISTICS.visitHistory(&context, writeStatisticsDay);
+  writer.write("],\"clockAvailable\":");
+  writer.write(summary.clockAvailable ? "true" : "false");
+  writer.write(",\"today\":");
+  if (summary.clockAvailable) {
+    writer.writeJsonString(ReadingTime::dateString(summary.todayDayNumber));
+  } else {
+    writer.write("null");
+  }
+  writer.write(",\"currentStreak\":");
+  writer.writeUnsigned(static_cast<uint32_t>(summary.currentStreak));
+  writer.write("}");
+  writer.flush();
+  server->sendContent("");
+
+  if (!summary.completed || !writer.good()) {
+    LOG_ERR("WEB", "Statistics export interrupted");
+  } else {
+    LOG_DBG("WEB", "[MEM] Statistics export complete: free=%u largest=%u", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+  }
 }
 
 void CrossPointWebServer::scanFiles(const char* path, const std::function<void(FileInfo)>& callback) const {

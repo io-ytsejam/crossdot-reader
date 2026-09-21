@@ -213,6 +213,39 @@ ReadingStatisticsHistory StatisticsStore::getHistory() {
   return result;
 }
 
+ReadingStatisticsVisitResult StatisticsStore::visitHistory(void* context, const DayVisitor visitor) {
+  ReadingStatisticsVisitResult result;
+  int64_t localEpoch = 0;
+  if (!getLocalEpoch(localEpoch)) return result;
+
+  result.clockAvailable = true;
+  result.todayDayNumber = ReadingTime::floorDay(localEpoch);
+  pruneOldFiles(result.todayDayNumber);
+
+  bool streakActive = true;
+  for (int dayOffset = 0; dayOffset < RETENTION_DAYS; ++dayOffset) {
+    const auto dayNumber = result.todayDayNumber - dayOffset;
+    auto day = loadDay(dayNumber);
+
+    if (streakActive) {
+      if (dayOffset == 0 && !day.goalMet) {
+        // Today remains eligible until midnight; an unfinished day does not
+        // break a streak that ended yesterday.
+      } else if (day.goalMet) {
+        ++result.currentStreak;
+      } else {
+        streakActive = false;
+      }
+    }
+
+    if (!day.books.empty() && visitor && !visitor(context, day)) {
+      result.completed = false;
+      break;
+    }
+  }
+  return result;
+}
+
 void StatisticsStore::updateBookPath(const std::string& oldPath, const std::string& newPath) {
   if (oldPath.empty() || oldPath == newPath) return;
   if (activeBookPath == oldPath) activeBookPath = newPath;

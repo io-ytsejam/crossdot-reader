@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "StatisticsSessionAuth.h"
+
 // Structure to hold file information
 struct FileInfo {
   String name;
@@ -68,6 +70,8 @@ class CrossPointWebServer {
   // Get the port number
   uint16_t getPort() const { return port; }
 
+  const char* getStatisticsPairingCode() const { return statisticsAuth.pairingCode(); }
+
  private:
   std::unique_ptr<WebServer> server = nullptr;
   std::unique_ptr<WebSocketsServer> wsServer = nullptr;
@@ -78,6 +82,7 @@ class CrossPointWebServer {
   uint16_t wsPort = 81;  // WebSocket port
   NetworkUDP udp;
   bool udpActive = false;
+  StatisticsSessionAuth statisticsAuth;
 
   // WebSocket upload state
   void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length);
@@ -94,6 +99,9 @@ class CrossPointWebServer {
   void handleJszip() const;
   void handleNotFound() const;
   void handleStatus() const;
+  void handleStatisticsAuth();
+  void handleStatisticsExport() const;
+  void initializeStatisticsAuth();
   void handleFileList() const;
   void handleFileListData() const;
   void handleDownload() const;
