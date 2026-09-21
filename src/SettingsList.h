@@ -386,6 +386,10 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           StrId::STR_CUSTOMISE_STATUS_BAR),
         SettingInfo::Toggle(StrId::STR_BATTERY, &CrossPointSettings::statusBarBattery, "statusBarBattery",
                             StrId::STR_CUSTOMISE_STATUS_BAR),
+        // Daily goal ring needs RTC-backed statistics, but is offered like the
+        // clock entries: harmless on devices without an RTC, simply not drawn.
+        SettingInfo::Toggle(StrId::STR_DAILY_GOAL, &CrossPointSettings::statusBarDailyGoal, "statusBarDailyGoal",
+                            StrId::STR_CUSTOMISE_STATUS_BAR),
         SettingInfo::Enum(StrId::STR_XTC_STATUS_BAR, &CrossPointSettings::xtcStatusBarMode,
                           {StrId::STR_HIDE, StrId::STR_BOTTOM, StrId::STR_TOP}, "xtcStatusBarMode",
                           StrId::STR_CUSTOMISE_STATUS_BAR),

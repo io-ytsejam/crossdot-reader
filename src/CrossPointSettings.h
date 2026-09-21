@@ -184,6 +184,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t statusBarProgressBarThickness = PROGRESS_BAR_NORMAL;
   uint8_t statusBarTitle = CHAPTER_TITLE;
   uint8_t statusBarBattery = 1;
+  // Daily reading goal ring in the status bar (requires RTC-backed statistics)
+  uint8_t statusBarDailyGoal = 0;
   uint8_t xtcStatusBarMode = XTC_STATUS_BAR_HIDE;
   // Clock display in status bar (X3 only, requires DS3231 RTC)
   uint8_t statusBarClock = STATUS_BAR_CLOCK_HIDE;
@@ -317,6 +319,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     uint8_t titleMode = HIDE_TITLE;  // STATUS_BAR_TITLE
     bool showBattery = false;
     bool showBatteryPercent = false;
+    bool showDailyGoal = false;
     uint8_t clockMode = STATUS_BAR_CLOCK_HIDE;  // STATUS_BAR_CLOCK_MODE
     bool clock12h = false;
     uint8_t clockUtcOffsetQ = 48;             // 48 = UTC+0
@@ -331,7 +334,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     // concern: pass halClock.isAvailable(), or true for layout reservation.
     bool textLaneVisible(bool clockAvailable) const {
       return showChapterPageCount || showBookProgressPercent || showsTitle() || showBattery ||
-             (showsClock() && clockAvailable);
+             (showsClock() && clockAvailable) || (showDailyGoal && clockAvailable);
     }
   };
   StatusBarSpec statusBarSpec() const;

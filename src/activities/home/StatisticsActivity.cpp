@@ -4,7 +4,6 @@
 #include <HalStorage.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstdio>
 #include <iterator>
 
@@ -173,7 +172,7 @@ void StatisticsActivity::drawDayHeader(const DailyReadingStatistics& day, const 
   const int ringCx = x + 12 + kRingRadius;
   const float goalFraction =
       day.goalMet ? 1.0f : static_cast<float>(day.totalSeconds) / static_cast<float>(ReadingTime::DAILY_GOAL_SECONDS);
-  drawGoalRing(ringCx, y + height / 2, kRingRadius, kRingStroke, goalFraction);
+  UITheme::drawProgressRing(renderer, ringCx, y + height / 2, kRingRadius, kRingStroke, goalFraction);
 
   const std::string title = formatDayTitle(day, history.todayDayNumber);
   const std::string duration = ReadingTime::formatDuration(day.totalSeconds);
@@ -230,43 +229,6 @@ void StatisticsActivity::drawBookRow(const BookReadingStatistics& book, const in
   }
   const auto duration = ReadingTime::formatDuration(book.activeSeconds);
   renderer.drawText(SMALL_FONT_ID, textX, y + height - renderer.getLineHeight(SMALL_FONT_ID) - 9, duration.c_str());
-}
-
-// Rasterizes the daily goal ring: a full annulus once fraction reaches 1
-// (closed circle = goal achieved), otherwise a clockwise arc from 12 o'clock
-// proportional to the day's reading progress. Uses drawPixel, which is
-// orientation-aware, so no extra transform handling is needed. The achieved
-// case needs no float math at all; the arc case costs one atan2f per annulus
-// pixel (software float on the C3), negligible next to the e-ink refresh.
-void StatisticsActivity::drawGoalRing(const int cx, const int cy, const int radius, const int stroke,
-                                      const float fraction) const {
-  if (radius <= 0 || stroke <= 0 || fraction <= 0.0f) return;
-
-  const int innerRadius = std::max(radius - stroke, 0);
-  const int outerSq = radius * radius;
-  const int innerSq = innerRadius * innerRadius;
-
-  if (fraction >= 1.0f) {
-    for (int dy = -radius; dy <= radius; ++dy) {
-      for (int dx = -radius; dx <= radius; ++dx) {
-        const int dSq = dx * dx + dy * dy;
-        if (dSq <= outerSq && dSq >= innerSq) renderer.drawPixel(cx + dx, cy + dy, true);
-      }
-    }
-    return;
-  }
-
-  constexpr float kTwoPi = 6.2831853f;
-  const float sweep = fraction * kTwoPi;
-  for (int dy = -radius; dy <= radius; ++dy) {
-    for (int dx = -radius; dx <= radius; ++dx) {
-      const int dSq = dx * dx + dy * dy;
-      if (dSq > outerSq || dSq < innerSq) continue;
-      float angle = atan2f(static_cast<float>(dx), static_cast<float>(-dy));  // 0 = top, clockwise
-      if (angle < 0.0f) angle += kTwoPi;
-      if (angle <= sweep) renderer.drawPixel(cx + dx, cy + dy, true);
-    }
-  }
 }
 
 // One-line summary above the day list: current streak of consecutive days

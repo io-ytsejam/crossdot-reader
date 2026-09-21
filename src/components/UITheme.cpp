@@ -6,6 +6,7 @@
 #include <Logging.h>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 #include "MappedInputManager.h"
@@ -159,6 +160,37 @@ int UITheme::getProgressBarHeight() {
   const ThemeMetrics metrics = UITheme::getInstance().getMetrics();
   const auto sb = SETTINGS.statusBarSpec();
   return sb.showsProgressBar() ? (sb.progressBarHeightPx + metrics.progressBarMarginTop) : 0;
+}
+
+void UITheme::drawProgressRing(const GfxRenderer& renderer, const int cx, const int cy, const int radius,
+                               const int stroke, const float fraction) {
+  if (radius <= 0 || stroke <= 0 || fraction <= 0.0f) return;
+
+  const int innerRadius = std::max(radius - stroke, 0);
+  const int outerSq = radius * radius;
+  const int innerSq = innerRadius * innerRadius;
+
+  if (fraction >= 1.0f) {
+    for (int dy = -radius; dy <= radius; ++dy) {
+      for (int dx = -radius; dx <= radius; ++dx) {
+        const int dSq = dx * dx + dy * dy;
+        if (dSq <= outerSq && dSq >= innerSq) renderer.drawPixel(cx + dx, cy + dy, true);
+      }
+    }
+    return;
+  }
+
+  constexpr float kTwoPi = 6.2831853f;
+  const float sweep = fraction * kTwoPi;
+  for (int dy = -radius; dy <= radius; ++dy) {
+    for (int dx = -radius; dx <= radius; ++dx) {
+      const int dSq = dx * dx + dy * dy;
+      if (dSq > outerSq || dSq < innerSq) continue;
+      float angle = atan2f(static_cast<float>(dx), static_cast<float>(-dy));  // 0 = top, clockwise
+      if (angle < 0.0f) angle += kTwoPi;
+      if (angle <= sweep) renderer.drawPixel(cx + dx, cy + dy, true);
+    }
+  }
 }
 
 // Centered text implementation that takes the safe area into account

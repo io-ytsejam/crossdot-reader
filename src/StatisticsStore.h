@@ -52,6 +52,11 @@ class StatisticsStore {
   void recordPageTurn();
   void endReading();
 
+  // Fraction of the daily reading goal reached so far (0..1), including the
+  // in-progress session. Reads a cached value only, so it is cheap and safe to
+  // call from the render path (never touches the SD card).
+  float todayGoalProgress() const;
+
   ReadingStatisticsHistory getHistory();
   ReadingStatisticsVisitResult visitHistory(void* context, DayVisitor visitor);
   void updateBookPath(const std::string& oldPath, const std::string& newPath);
@@ -69,6 +74,14 @@ class StatisticsStore {
   std::string activeBookCoverBmpPath;
   int32_t activeUtcOffsetSeconds = 0;
   bool retentionPruned = false;
+  // Daily-goal cache for the status-bar ring. baselineDayNumber is the local day
+  // at session open; baselineSeconds is that day's persisted total, and
+  // todayActiveSecondsSnapshot is the total shown for the day the session is
+  // currently recording. Only the main task writes it; the render task reads
+  // the uint32.
+  int64_t baselineDayNumber = 0;
+  uint32_t baselineSeconds = 0;
+  uint32_t todayActiveSecondsSnapshot = 0;
 
   static bool getLocalEpoch(int64_t& localEpoch, int32_t* utcOffsetSeconds = nullptr);
   static std::string filePathForDay(int64_t dayNumber);
@@ -76,6 +89,7 @@ class StatisticsStore {
                             const std::string& author, const std::string& coverBmpPath, int32_t utcOffsetSeconds);
   static DailyReadingStatistics loadDay(int64_t dayNumber);
   void pruneOldFiles(int64_t todayDayNumber);
+  void refreshTodaySnapshot();
 };
 
 #define READING_STATISTICS StatisticsStore::getInstance()

@@ -91,11 +91,40 @@ bool StatisticsStore::beginReading(const std::string& path, const std::string& t
   activeBookAuthor = author;
   activeBookCoverBmpPath = coverBmpPath;
   accumulator.begin(localEpoch, millis());
+
+  // Cache today's persisted total so the status-bar goal ring can render it
+  // without hitting the SD card on the render path. loadDay() is fine here: this
+  // runs once per book open, on the main task.
+  baselineDayNumber = ReadingTime::floorDay(localEpoch);
+  baselineSeconds = loadDay(baselineDayNumber).totalSeconds;
+  todayActiveSecondsSnapshot = baselineSeconds;
   return true;
 }
 
 void StatisticsStore::recordPageTurn() {
-  if (accumulator.isRunning()) accumulator.mark(millis());
+  if (!accumulator.isRunning()) return;
+  accumulator.mark(millis());
+  refreshTodaySnapshot();
+}
+
+float StatisticsStore::todayGoalProgress() const {
+  return std::min(1.0f,
+                  static_cast<float>(todayActiveSecondsSnapshot) / static_cast<float>(ReadingTime::DAILY_GOAL_SECONDS));
+}
+
+void StatisticsStore::refreshTodaySnapshot() {
+  // Follow the accumulator into the day it is currently recording, so a session
+  // that crosses midnight starts the new day's ring from zero. baselineSeconds
+  // only applies to the day the session opened on; later days have no persisted
+  // total yet.
+  const auto& fragments = accumulator.getFragments();
+  if (fragments.empty()) return;
+  const int64_t currentDay = fragments.back().dayNumber;
+  uint32_t total = currentDay == baselineDayNumber ? baselineSeconds : 0;
+  for (const auto& fragment : fragments) {
+    if (fragment.dayNumber == currentDay) total += fragment.activeSeconds;
+  }
+  todayActiveSecondsSnapshot = total;
 }
 
 bool StatisticsStore::appendSession(const ReadingTime::DayFragment& fragment, const std::string& path,
@@ -146,6 +175,9 @@ void StatisticsStore::endReading() {
   activeBookAuthor.clear();
   activeBookCoverBmpPath.clear();
   activeUtcOffsetSeconds = 0;
+  baselineDayNumber = 0;
+  baselineSeconds = 0;
+  todayActiveSecondsSnapshot = 0;
 }
 
 DailyReadingStatistics StatisticsStore::loadDay(const int64_t dayNumber) {

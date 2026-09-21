@@ -43,7 +43,6 @@ class StatisticsActivity final : public Activity {
   void drawStreakBanner(int y);
   void drawDayHeader(const DailyReadingStatistics& day, int y, int height, bool selected);
   void drawBookRow(const BookReadingStatistics& book, int y, int height, bool selected);
-  void drawGoalRing(int cx, int cy, int radius, int stroke, float fraction) const;
 
  public:
   explicit StatisticsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)

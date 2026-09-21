@@ -37,6 +37,11 @@ class UITheme {
   static UIIcon getFileIcon(const std::string& filename);
   static int getStatusBarHeight();
   static int getProgressBarHeight();
+  // Rasterizes a progress ring centered at (cx, cy): a clockwise annulus arc
+  // from 12 o'clock proportional to fraction, or a closed circle once fraction
+  // reaches 1. Uses drawPixel, which is orientation-aware. Shared by the
+  // statistics goal ring and the reader status bar.
+  static void drawProgressRing(const GfxRenderer& renderer, int cx, int cy, int radius, int stroke, float fraction);
 
  private:
   const ThemeMetrics* currentMetrics;

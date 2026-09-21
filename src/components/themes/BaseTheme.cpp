@@ -781,7 +781,8 @@ void BaseTheme::fillPopupProgress(const GfxRenderer& renderer, const Rect& layou
 
 void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, const int currentPage,
                               const int pageCount, std::string title, const int paddingBottom, const int textYOffset,
-                              const bool fillMargin, const bool isPageBookmarked, const bool pageCountEstimated) const {
+                              const bool fillMargin, const bool isPageBookmarked, const bool pageCountEstimated,
+                              const float dailyGoalProgress) const {
   auto metrics = UITheme::getInstance().getMetrics();
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
@@ -856,6 +857,19 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
     }
 
     leftClusterWidth += batteryWidth;
+  }
+
+  // Draw daily reading goal ring (requires RTC-backed statistics; caller passes
+  // a negative progress when the value is unknown, e.g. outside a read session).
+  if (sb.showDailyGoal && halClock.isAvailable() && dailyGoalProgress >= 0.0f) {
+    constexpr int ringRadius = 6;
+    constexpr int ringStroke = 2;
+    constexpr int ringDiameter = ringRadius * 2 + 1;
+    const int ringGap = leftClusterWidth > 0 ? 6 : 0;
+    const int rowHeight = std::max(metrics.batteryHeight, renderer.getLineHeight(SMALL_FONT_ID));
+    UITheme::drawProgressRing(renderer, leftClusterX + leftClusterWidth + ringGap + ringRadius, textY + rowHeight / 2,
+                              ringRadius, ringStroke, dailyGoalProgress);
+    leftClusterWidth += ringGap + ringDiameter;
   }
 
   // Draw Clock (X3 only — DS3231 RTC)

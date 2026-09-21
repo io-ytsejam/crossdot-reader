@@ -25,6 +25,7 @@ enum MenuItem {
   ITEM_TITLE,
   ITEM_BATTERY,
   ITEM_XTC_STATUS_BAR,
+  ITEM_DAILY_GOAL,        // X3 only (RTC-backed statistics)
   ITEM_CLOCK,             // X3 only
   ITEM_CLOCK_FORMAT,      // X3 only
   ITEM_CLOCK_UTC_OFFSET,  // X3 only, launches ClockOffsetActivity
@@ -32,8 +33,8 @@ enum MenuItem {
   ITEM_COUNT
 };
 
-constexpr int BASE_MENU_ITEMS = ITEM_CLOCK;  // Items shown on every device
-constexpr int FULL_MENU_ITEMS = ITEM_COUNT;  // Items shown when RTC is available
+constexpr int BASE_MENU_ITEMS = ITEM_DAILY_GOAL;  // Items shown on every device
+constexpr int FULL_MENU_ITEMS = ITEM_COUNT;       // Items shown when RTC is available
 
 const StrId menuNames[FULL_MENU_ITEMS] = {
     StrId::STR_CHAPTER_PAGE_COUNT,
@@ -43,6 +44,7 @@ const StrId menuNames[FULL_MENU_ITEMS] = {
     StrId::STR_TITLE,
     StrId::STR_BATTERY,
     StrId::STR_XTC_STATUS_BAR,
+    StrId::STR_DAILY_GOAL,
     StrId::STR_CLOCK,
     StrId::STR_CLOCK_FORMAT,
     StrId::STR_CLOCK_UTC_OFFSET,
@@ -213,6 +215,9 @@ void StatusBarSettingsActivity::handleSelection() {
                          SETTINGS.saveToFile();
                        });
       return;
+    case ITEM_DAILY_GOAL:
+      SETTINGS.statusBarDailyGoal = (SETTINGS.statusBarDailyGoal + 1) % 2;
+      break;
     case ITEM_CLOCK:
       SETTINGS.statusBarClock = (SETTINGS.statusBarClock + 1) % STATUS_BAR_CLOCK_ITEMS;
       break;
@@ -264,6 +269,8 @@ void StatusBarSettingsActivity::render(RenderLock&&) {
             return SETTINGS.statusBarBattery ? tr(STR_SHOW) : tr(STR_HIDE);
           case ITEM_XTC_STATUS_BAR:
             return I18N.get(xtcStatusBarNames[SETTINGS.xtcStatusBarMode]);
+          case ITEM_DAILY_GOAL:
+            return SETTINGS.statusBarDailyGoal ? tr(STR_SHOW) : tr(STR_HIDE);
           case ITEM_CLOCK:
             return I18N.get(statusBarClockNames[SETTINGS.statusBarClock]);
           case ITEM_CLOCK_FORMAT: {
@@ -291,7 +298,7 @@ void StatusBarSettingsActivity::render(RenderLock&&) {
     title = tr(STR_EXAMPLE_CHAPTER);
   }
 
-  GUI.drawStatusBar(renderer, 75, 8, 32, title, verticalPreviewPadding, 0, false);
+  GUI.drawStatusBar(renderer, 75, 8, 32, title, verticalPreviewPadding, 0, false, false, false, 0.65f);
 
   renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding,
                     renderer.getScreenHeight() - UITheme::getInstance().getStatusBarHeight() - verticalPreviewPadding -
