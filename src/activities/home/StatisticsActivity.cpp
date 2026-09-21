@@ -4,6 +4,7 @@
 #include <HalStorage.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include "GfxRenderer.h"
 #include "MappedInputManager.h"
@@ -112,14 +113,24 @@ void StatisticsActivity::drawDayHeader(const DailyReadingStatistics& day, const 
   const int width = renderer.getScreenWidth() - metrics.contentSidePadding * 2;
   if (selected) renderer.fillRoundedRect(x, y + 2, width, height - 4, 10, Color::LightGray);
 
+  // Goal ring on the left edge: a partial arc while the day is in progress,
+  // a closed circle once the goal is met. Date shifts right to make room.
+  constexpr int kRingRadius = 12;
+  constexpr int kRingStroke = 3;
+  const int ringCx = x + 12 + kRingRadius;
+  const float goalFraction =
+      day.goalMet ? 1.0f : static_cast<float>(day.totalSeconds) / static_cast<float>(ReadingTime::DAILY_GOAL_SECONDS);
+  drawGoalRing(ringCx, y + height / 2, kRingRadius, kRingStroke, goalFraction);
+
   const std::string title =
       day.date == history.todayDate ? std::string(tr(STR_STATISTICS_TODAY)) + " (" + day.date + ")" : day.date;
   const std::string duration = ReadingTime::formatDuration(day.totalSeconds);
   const int valueWidth = renderer.getTextWidth(UI_10_FONT_ID, duration.c_str());
-  const int textWidth = std::max(20, width - valueWidth - 28);
+  const int textX = ringCx + kRingRadius + 10;
+  const int textWidth = std::max(20, x + width - valueWidth - 12 - textX);
   const auto visibleTitle = renderer.truncatedText(UI_10_FONT_ID, title.c_str(), textWidth, EpdFontFamily::BOLD);
   const int textY = y + (height - renderer.getLineHeight(UI_10_FONT_ID)) / 2;
-  renderer.drawText(UI_10_FONT_ID, x + 12, textY, visibleTitle.c_str(), true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_10_FONT_ID, textX, textY, visibleTitle.c_str(), true, EpdFontFamily::BOLD);
   renderer.drawText(UI_10_FONT_ID, x + width - valueWidth - 12, textY, duration.c_str());
 }
 
@@ -167,6 +178,43 @@ void StatisticsActivity::drawBookRow(const BookReadingStatistics& book, const in
   }
   const auto duration = ReadingTime::formatDuration(book.activeSeconds);
   renderer.drawText(SMALL_FONT_ID, textX, y + height - renderer.getLineHeight(SMALL_FONT_ID) - 9, duration.c_str());
+}
+
+// Rasterizes the daily goal ring: a full annulus once fraction reaches 1
+// (closed circle = goal achieved), otherwise a clockwise arc from 12 o'clock
+// proportional to the day's reading progress. Uses drawPixel, which is
+// orientation-aware, so no extra transform handling is needed. The achieved
+// case needs no float math at all; the arc case costs one atan2f per annulus
+// pixel (software float on the C3), negligible next to the e-ink refresh.
+void StatisticsActivity::drawGoalRing(const int cx, const int cy, const int radius, const int stroke,
+                                      const float fraction) const {
+  if (radius <= 0 || stroke <= 0 || fraction <= 0.0f) return;
+
+  const int innerRadius = std::max(radius - stroke, 0);
+  const int outerSq = radius * radius;
+  const int innerSq = innerRadius * innerRadius;
+
+  if (fraction >= 1.0f) {
+    for (int dy = -radius; dy <= radius; ++dy) {
+      for (int dx = -radius; dx <= radius; ++dx) {
+        const int dSq = dx * dx + dy * dy;
+        if (dSq <= outerSq && dSq >= innerSq) renderer.drawPixel(cx + dx, cy + dy, true);
+      }
+    }
+    return;
+  }
+
+  constexpr float kTwoPi = 6.2831853f;
+  const float sweep = fraction * kTwoPi;
+  for (int dy = -radius; dy <= radius; ++dy) {
+    for (int dx = -radius; dx <= radius; ++dx) {
+      const int dSq = dx * dx + dy * dy;
+      if (dSq > outerSq || dSq < innerSq) continue;
+      float angle = atan2f(static_cast<float>(dx), static_cast<float>(-dy));  // 0 = top, clockwise
+      if (angle < 0.0f) angle += kTwoPi;
+      if (angle <= sweep) renderer.drawPixel(cx + dx, cy + dy, true);
+    }
+  }
 }
 
 void StatisticsActivity::renderHistory(const int contentTop, const int contentBottom) {
