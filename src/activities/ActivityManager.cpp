@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "OpdsServerStore.h"
+#include "activities/home/StatisticsActivity.h"
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
@@ -208,6 +209,8 @@ void ActivityManager::goToBrowser() {
   }
 }
 
+void ActivityManager::goToStatistics() { replaceActivity(std::make_unique<StatisticsActivity>(renderer, mappedInput)); }
+
 void ActivityManager::goToReader(std::string path, const bool allowFastInitialRefresh) {
   replaceActivity(std::make_unique<ReaderActivity>(renderer, mappedInput, std::move(path), allowFastInitialRefresh));
 }
@@ -236,6 +239,8 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
       initialMenuItem = HomeMenuItem::FILE_TRANSFER;
     } else if (activityName == "Settings") {
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
+    } else if (activityName == "Statistics") {
+      initialMenuItem = HomeMenuItem::STATISTICS;
     }
   }
   replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem));

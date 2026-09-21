@@ -9,9 +9,8 @@ extern HalClock halClock;  // Singleton
 class HalClock {
   bool _available = false;
   mutable Rtc _sdkRtc;
-  mutable uint8_t _cachedHour = 0;
-  mutable uint8_t _cachedMinute = 0;
-  mutable bool _hasCachedTime = false;
+  mutable Rtc::DateTime _cachedDateTime{};
+  mutable bool _hasCachedDateTime = false;
   mutable unsigned long _lastPollMs = 0;
 
   static constexpr unsigned long CLOCK_POLL_MS = 10000;  // 10 seconds
@@ -26,6 +25,11 @@ class HalClock {
   // Get current hour (0-23) and minute (0-59).
   // Returns false if RTC is not available.
   bool getTime(uint8_t& hour, uint8_t& minute) const;
+
+  // Get the complete current UTC date/time. The RTC is kept in UTC; callers
+  // that group data by local calendar day must apply the configured offset.
+  // Returns false if the RTC is absent, unset, or cannot be read.
+  bool getDateTime(Rtc::DateTime& dateTime, bool forceRefresh = false) const;
 
   // Format time into a caller-provided buffer.
   // 24h mode produces "HH:MM" (needs >=6 bytes); 12h mode produces "H:MM AM"/"HH:MM PM" (needs >=9 bytes).

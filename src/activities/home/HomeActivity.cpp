@@ -17,6 +17,7 @@
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
+#include "activities/ActivityManager.h"
 #include "components/UITheme.h"
 #include "components/themes/BaseTheme.h"
 #include "fontIds.h"
@@ -193,6 +194,9 @@ void HomeActivity::loop() {
       case HomeMenuItem::SETTINGS_MENU:
         onSettingsOpen();
         break;
+      case HomeMenuItem::STATISTICS:
+        onStatisticsOpen();
+        break;
       default:
         break;
     }
@@ -354,3 +358,5 @@ void HomeActivity::onSettingsOpen() { activityManager.goToSettings(); }
 void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
+
+void HomeActivity::onStatisticsOpen() { activityManager.goToStatistics(); }

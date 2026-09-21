@@ -14,6 +14,7 @@
 #include "ProgressFile.h"
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
+#include "StatisticsStore.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
@@ -41,6 +42,7 @@ void TxtReaderActivity::onEnter() {
   APP_STATE.openEpubPath = filePath;
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(filePath, fileName, "", "");
+  READING_STATISTICS.beginReading(filePath, fileName);
 
   // Trigger first update
   requestUpdate();
@@ -48,6 +50,8 @@ void TxtReaderActivity::onEnter() {
 
 void TxtReaderActivity::onExit() {
   Activity::onExit();
+
+  READING_STATISTICS.endReading();
 
   // Reset orientation back to portrait for the rest of the UI
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
@@ -75,10 +79,12 @@ void TxtReaderActivity::loop() {
 
   if (prevTriggered && currentPage > 0) {
     currentPage--;
+    READING_STATISTICS.recordPageTurn();
     requestUpdate();
   } else if (nextTriggered) {
     if (currentPage < totalPages - 1) {
       currentPage++;
+      READING_STATISTICS.recordPageTurn();
       requestUpdate();
     } else {
       onGoHome();

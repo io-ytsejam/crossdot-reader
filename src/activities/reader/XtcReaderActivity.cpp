@@ -20,6 +20,7 @@
 #include "ProgressFile.h"
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
+#include "StatisticsStore.h"
 #include "XtcReaderChapterSelectionActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -40,6 +41,7 @@ void XtcReaderActivity::onEnter() {
   APP_STATE.openEpubPath = xtc->getPath();
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(xtc->getPath(), xtc->getTitle(), xtc->getAuthor(), xtc->getThumbBmpPath());
+  READING_STATISTICS.beginReading(xtc->getPath(), xtc->getTitle());
 
   // Trigger first update
   requestUpdate();
@@ -47,6 +49,8 @@ void XtcReaderActivity::onEnter() {
 
 void XtcReaderActivity::onExit() {
   Activity::onExit();
+
+  READING_STATISTICS.endReading();
 
   APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
@@ -127,6 +131,7 @@ void XtcReaderActivity::loop() {
       onGoHome();
     } else {
       currentPage = xtc->getPageCount() - 1;
+      READING_STATISTICS.recordPageTurn();
       requestUpdate();
     }
     return;
@@ -138,17 +143,21 @@ void XtcReaderActivity::loop() {
   const int skipAmount = skipPages ? 10 : 1;
 
   if (prevTriggered) {
+    const uint32_t previousPage = currentPage;
     if (currentPage >= static_cast<uint32_t>(skipAmount)) {
       currentPage -= skipAmount;
     } else {
       currentPage = 0;
     }
+    if (currentPage != previousPage) READING_STATISTICS.recordPageTurn();
     requestUpdate();
   } else if (nextTriggered) {
+    const uint32_t previousPage = currentPage;
     currentPage += skipAmount;
     if (currentPage >= xtc->getPageCount()) {
       currentPage = xtc->getPageCount();  // Allow showing "End of book"
     }
+    if (currentPage != previousPage) READING_STATISTICS.recordPageTurn();
     requestUpdate();
   }
 }

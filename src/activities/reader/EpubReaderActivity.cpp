@@ -34,6 +34,7 @@
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "StatisticsStore.h"
 #include "activities/settings/TextSettingsActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -143,6 +144,7 @@ void moveFinishedBookToReadFolder(const std::string& srcPath, const std::string&
   // Keep the book in recents (crossink behavior): repoint the entry to its new
   // location instead of dropping it. updatePath persists on success.
   RECENT_BOOKS.updatePath(srcPath, dstPath, oldCachePath, newCachePath);
+  READING_STATISTICS.updateBookPath(srcPath, dstPath);
   if (APP_STATE.openEpubPath == srcPath) {
     APP_STATE.openEpubPath = dstPath;
     APP_STATE.saveToFile();
@@ -206,6 +208,7 @@ void EpubReaderActivity::onEnter() {
   APP_STATE.openEpubPath = epub->getPath();
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
+  READING_STATISTICS.beginReading(epub->getPath(), epub->getTitle());
 
   loadCachedBookmarks();
 
@@ -215,6 +218,8 @@ void EpubReaderActivity::onEnter() {
 
 void EpubReaderActivity::onExit() {
   Activity::onExit();
+
+  READING_STATISTICS.endReading();
 
   // The extractor holds a raw pointer to this activity's epub; drop it before
   // the activity (and the shared_ptr) goes away.
@@ -466,7 +471,7 @@ void EpubReaderActivity::loop() {
     }
 
     if ((millis() - lastPageTurnTime) >= pageTurnDuration) {
-      pageTurn(true);
+      pageTurn(true, false);
       return;
     }
   }
@@ -1009,7 +1014,9 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
   }
 }
 
-void EpubReaderActivity::pageTurn(bool isForwardTurn) {
+void EpubReaderActivity::pageTurn(bool isForwardTurn, const bool countAsInteraction) {
+  const int previousSpineIndex = currentSpineIndex;
+  const int previousPage = section ? section->currentPage : -1;
   if (isForwardTurn) {
     // Advance within the section while there are (or may still be) more pages: either a built
     // page ahead, or the section is still building (windowed), in which case more pages exist
@@ -1041,6 +1048,12 @@ void EpubReaderActivity::pageTurn(bool isForwardTurn) {
       }
     }
   }
+
+  const int newPage = section ? section->currentPage : -1;
+  if (countAsInteraction && (currentSpineIndex != previousSpineIndex || newPage != previousPage)) {
+    READING_STATISTICS.recordPageTurn();
+  }
+
   lastPageTurnTime = millis();
   requestUpdate();
 }

@@ -175,7 +175,7 @@ class EpubReaderActivity final : public Activity {
   bool launchKOReaderSync();
   void applyOrientation(uint8_t orientation);
   void toggleAutoPageTurn(uint8_t selectedPageTurnOption);
-  void pageTurn(bool isForwardTurn);
+  void pageTurn(bool isForwardTurn, bool countAsInteraction = true);
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();
