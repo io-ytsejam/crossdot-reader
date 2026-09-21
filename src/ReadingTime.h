@@ -70,6 +70,12 @@ inline std::string formatDuration(const uint32_t seconds) {
   return std::to_string(hours) + " h " + std::to_string(remainingMinutes) + " min";
 }
 
+// Daily reading goal. A day meets the goal once this much active reading time
+// (as counted by Accumulator around manual page turns) is recorded for it.
+constexpr uint32_t DAILY_GOAL_SECONDS = 10 * 60;
+
+inline bool dailyGoalMet(const uint32_t activeSeconds) { return activeSeconds >= DAILY_GOAL_SECONDS; }
+
 struct DayFragment {
   int64_t dayNumber = 0;
   int64_t firstActiveAt = 0;

@@ -31,6 +31,28 @@ bool dayNumberFromFilename(const char* name, int64_t& dayNumber) {
   dayNumber = ReadingTime::daysFromCivil(year, month, day);
   return true;
 }
+
+// Longest run of goal-met days ending today — or ending yesterday while today
+// is still in progress. days are newest-first; a missing entry is a day with
+// no statistics file (device off, or goal missed), which ends the streak.
+// Bounded by RETENTION_DAYS, since older files are pruned.
+int currentStreak(const std::vector<DailyReadingStatistics>& days, const int64_t today) {
+  int64_t expected = today;
+  if (days.empty() || days.front().dayNumber != today || !days.front().goalMet) {
+    // Today has not reached the goal yet (no reading, or still reading): an
+    // in-progress day must not zero a streak that is still alive.
+    expected = today - 1;
+  }
+
+  int streak = 0;
+  for (const auto& day : days) {
+    if (day.dayNumber > expected) continue;  // today, still in progress
+    if (day.dayNumber < expected || !day.goalMet) break;
+    ++streak;
+    --expected;
+  }
+  return streak;
+}
 }  // namespace
 
 StatisticsStore& StatisticsStore::getInstance() {
@@ -124,6 +146,7 @@ void StatisticsStore::endReading() {
 
 DailyReadingStatistics StatisticsStore::loadDay(const int64_t dayNumber) {
   DailyReadingStatistics result;
+  result.dayNumber = dayNumber;
   result.date = ReadingTime::dateString(dayNumber);
 
   JsonDocument doc;
@@ -154,6 +177,7 @@ DailyReadingStatistics StatisticsStore::loadDay(const int64_t dayNumber) {
     result.totalSeconds += seconds;
   }
 
+  result.goalMet = ReadingTime::dailyGoalMet(result.totalSeconds);
   std::sort(result.books.begin(), result.books.end(),
             [](const auto& left, const auto& right) { return left.lastReadAt > right.lastReadAt; });
   return result;
@@ -185,6 +209,7 @@ ReadingStatisticsHistory StatisticsStore::getHistory() {
     auto day = loadDay(dayNumber);
     if (!day.books.empty()) result.days.push_back(std::move(day));
   }
+  result.currentStreak = currentStreak(result.days, today);
   return result;
 }
 

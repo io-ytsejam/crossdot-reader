@@ -17,13 +17,16 @@ struct BookReadingStatistics {
 
 struct DailyReadingStatistics {
   std::string date;
+  int64_t dayNumber = 0;  // Local-time civil day; enables gap-aware streak math.
   uint32_t totalSeconds = 0;
+  bool goalMet = false;  // totalSeconds >= ReadingTime::DAILY_GOAL_SECONDS
   std::vector<BookReadingStatistics> books;
 };
 
 struct ReadingStatisticsHistory {
   bool clockAvailable = false;
   std::string todayDate;
+  int currentStreak = 0;  // Consecutive goal-met days ending today (or yesterday).
   std::vector<DailyReadingStatistics> days;
 };
 
