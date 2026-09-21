@@ -115,7 +115,7 @@ The Recent Books screen lists the most recently opened books in a chronological 
 
 #### 3.4.1 Statistics Screen
 
-The Statistics screen shows up to 90 days of reading history, newest first. Each day is an expanded entry with its date and total reading time on one row, followed by the books read that day with title, author, cover thumbnail, and reading duration. Select a day to move focus into its nested book list, then select a book to open it. Back returns focus to the day list. Reading time is counted around successful manual page turns, with at most five minutes counted after opening a book or after each turn. Automatic page turns do not extend the timer.
+The Statistics screen shows up to 90 days of reading history, newest first. Each day is an expanded entry with a progress ring toward the daily 10-minute reading goal, its date, and total reading time on one row, followed by the books read that day with title, author, cover thumbnail, and reading duration. The ring closes once a day reaches the goal. When at least one day in a row has met the goal, a banner above the list shows the current streak (e.g. "5 day streak"). Select a day to move focus into its nested book list, then select a book to open it. Back returns focus to the day list. Reading time is counted around successful manual page turns, with at most five minutes counted after opening a book or after each turn. Automatic page turns do not extend the timer.
 
 Daily statistics require a valid hardware clock. On devices without one, or before the clock has been synchronized, the screen reports that statistics are unavailable.
 
