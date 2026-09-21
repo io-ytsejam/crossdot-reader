@@ -208,7 +208,7 @@ void EpubReaderActivity::onEnter() {
   APP_STATE.openEpubPath = epub->getPath();
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
-  READING_STATISTICS.beginReading(epub->getPath(), epub->getTitle());
+  READING_STATISTICS.beginReading(epub->getPath(), epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
 
   loadCachedBookmarks();
 

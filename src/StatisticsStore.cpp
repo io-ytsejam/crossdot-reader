@@ -54,7 +54,8 @@ std::string StatisticsStore::filePathForDay(const int64_t dayNumber) {
   return std::string(DIRECTORY) + "/" + ReadingTime::dateString(dayNumber) + ".json";
 }
 
-bool StatisticsStore::beginReading(const std::string& path, const std::string& title) {
+bool StatisticsStore::beginReading(const std::string& path, const std::string& title, const std::string& author,
+                                   const std::string& coverBmpPath) {
   endReading();
 
   int64_t localEpoch = 0;
@@ -65,6 +66,8 @@ bool StatisticsStore::beginReading(const std::string& path, const std::string& t
 
   activeBookPath = path;
   activeBookTitle = title;
+  activeBookAuthor = author;
+  activeBookCoverBmpPath = coverBmpPath;
   accumulator.begin(localEpoch, millis());
   return true;
 }
@@ -74,7 +77,8 @@ void StatisticsStore::recordPageTurn() {
 }
 
 bool StatisticsStore::appendSession(const ReadingTime::DayFragment& fragment, const std::string& path,
-                                    const std::string& title, const int32_t utcOffsetSeconds) {
+                                    const std::string& title, const std::string& author,
+                                    const std::string& coverBmpPath, const int32_t utcOffsetSeconds) {
   if (fragment.activeSeconds == 0) return true;
 
   Storage.ensureDirectoryExists(DIRECTORY);
@@ -90,6 +94,8 @@ bool StatisticsStore::appendSession(const ReadingTime::DayFragment& fragment, co
   JsonObject session = sessions.add<JsonObject>();
   session["path"] = path;
   session["title"] = title;
+  session["author"] = author;
+  session["coverBmpPath"] = coverBmpPath;
   session["start"] = fragment.firstActiveAt - utcOffsetSeconds;
   session["end"] = fragment.lastActiveAt - utcOffsetSeconds;
   session["offsetMinutes"] = utcOffsetSeconds / 60;
@@ -102,7 +108,8 @@ void StatisticsStore::endReading() {
 
   const auto& fragments = accumulator.finish(millis());
   for (const auto& fragment : fragments) {
-    if (!appendSession(fragment, activeBookPath, activeBookTitle, activeUtcOffsetSeconds)) {
+    if (!appendSession(fragment, activeBookPath, activeBookTitle, activeBookAuthor, activeBookCoverBmpPath,
+                       activeUtcOffsetSeconds)) {
       LOG_ERR(MODULE, "Failed to persist reading session for %s", activeBookPath.c_str());
     }
   }
@@ -110,21 +117,17 @@ void StatisticsStore::endReading() {
   if (!fragments.empty()) pruneOldFiles(fragments.back().dayNumber);
   activeBookPath.clear();
   activeBookTitle.clear();
+  activeBookAuthor.clear();
+  activeBookCoverBmpPath.clear();
   activeUtcOffsetSeconds = 0;
 }
 
-DailyReadingStatistics StatisticsStore::getToday() {
+DailyReadingStatistics StatisticsStore::loadDay(const int64_t dayNumber) {
   DailyReadingStatistics result;
-  int64_t localEpoch = 0;
-  if (!getLocalEpoch(localEpoch)) return result;
-
-  result.clockAvailable = true;
-  const int64_t today = ReadingTime::floorDay(localEpoch);
-  result.date = ReadingTime::dateString(today);
-  pruneOldFiles(today);
+  result.date = ReadingTime::dateString(dayNumber);
 
   JsonDocument doc;
-  const std::string filePath = filePathForDay(today);
+  const std::string filePath = filePathForDay(dayNumber);
   if (!Storage.exists(filePath.c_str())) return result;
   if (!PersistableStoreBase::readDocFromFile(filePath.c_str(), doc)) return result;
 
@@ -132,23 +135,56 @@ DailyReadingStatistics StatisticsStore::getToday() {
     const char* pathValue = session["path"] | "";
     if (pathValue[0] == '\0') continue;
     const char* titleValue = session["title"] | "";
+    const char* authorValue = session["author"] | "";
+    const char* coverBmpPathValue = session["coverBmpPath"] | "";
     const uint32_t seconds = session["seconds"] | 0U;
     const int64_t lastReadAt = session["end"] | static_cast<int64_t>(0);
 
     auto book = std::find_if(result.books.begin(), result.books.end(),
                              [pathValue](const BookReadingStatistics& value) { return value.path == pathValue; });
     if (book == result.books.end()) {
-      result.books.push_back({pathValue, titleValue, seconds, lastReadAt});
+      result.books.push_back({pathValue, titleValue, authorValue, coverBmpPathValue, seconds, lastReadAt});
     } else {
       book->activeSeconds += seconds;
       book->lastReadAt = std::max(book->lastReadAt, lastReadAt);
       if (book->title.empty() && titleValue[0] != '\0') book->title = titleValue;
+      if (book->author.empty() && authorValue[0] != '\0') book->author = authorValue;
+      if (book->coverBmpPath.empty() && coverBmpPathValue[0] != '\0') book->coverBmpPath = coverBmpPathValue;
     }
     result.totalSeconds += seconds;
   }
 
   std::sort(result.books.begin(), result.books.end(),
             [](const auto& left, const auto& right) { return left.lastReadAt > right.lastReadAt; });
+  return result;
+}
+
+ReadingStatisticsHistory StatisticsStore::getHistory() {
+  ReadingStatisticsHistory result;
+  int64_t localEpoch = 0;
+  if (!getLocalEpoch(localEpoch)) return result;
+
+  result.clockAvailable = true;
+  const int64_t today = ReadingTime::floorDay(localEpoch);
+  result.todayDate = ReadingTime::dateString(today);
+  pruneOldFiles(today);
+
+  const int64_t oldestKeptDay = today - (RETENTION_DAYS - 1);
+  std::vector<int64_t> dayNumbers;
+  for (const String& filename : Storage.listFiles(DIRECTORY, 200)) {
+    int64_t dayNumber = 0;
+    if (!dayNumberFromFilename(filename.c_str(), dayNumber)) continue;
+    if (dayNumber < oldestKeptDay || dayNumber > today) continue;
+    dayNumbers.push_back(dayNumber);
+  }
+
+  std::sort(dayNumbers.begin(), dayNumbers.end(), [](const int64_t left, const int64_t right) { return left > right; });
+  dayNumbers.erase(std::unique(dayNumbers.begin(), dayNumbers.end()), dayNumbers.end());
+  result.days.reserve(dayNumbers.size());
+  for (const int64_t dayNumber : dayNumbers) {
+    auto day = loadDay(dayNumber);
+    if (!day.books.empty()) result.days.push_back(std::move(day));
+  }
   return result;
 }
 

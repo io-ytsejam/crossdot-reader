@@ -1,4 +1,5 @@
 #pragma once
+
 #include <I18n.h>
 #include <activities/Activity.h>
 
@@ -10,10 +11,31 @@
 
 class StatisticsActivity final : public Activity {
  private:
-  DailyReadingStatistics statistics;
-  int selectorIndex = 0;
+  enum class Focus { Day, Book };
 
-  std::string bookTitle(int index) const;
+  ReadingStatisticsHistory history;
+  Focus focus = Focus::Day;
+  int selectedDayIndex = 0;
+  int selectedBookIndex = 0;
+  int scrollOffset = 0;
+  std::vector<bool> enrichedDays;
+
+  void enrichSelectedDayBooks();
+  void focusSelectedDayBooks();
+  void activateSelectedBook();
+  void handleTouch(int contentTop, int contentHeight);
+  void ensureSelectionVisible(int contentHeight);
+
+  int dayHeaderHeight() const;
+  int bookRowHeight() const;
+  int dayGap() const;
+  int dayHeight(int dayIndex) const;
+  int dayTop(int dayIndex) const;
+  int totalHistoryHeight() const;
+
+  void renderHistory(int contentTop, int contentBottom);
+  void drawDayHeader(const DailyReadingStatistics& day, int y, int height, bool selected);
+  void drawBookRow(const BookReadingStatistics& book, int y, int height, bool selected);
 
  public:
   explicit StatisticsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
