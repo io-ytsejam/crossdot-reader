@@ -32,6 +32,8 @@ class StatisticsActivity final : public Activity {
   int dayHeight(int dayIndex) const;
   int dayTop(int dayIndex) const;
   int totalHistoryHeight() const;
+  int contentTop() const;
+  int contentBottom() const;
 
   void renderHistory(int contentTop, int contentBottom);
   void drawDayHeader(const DailyReadingStatistics& day, int y, int height, bool selected);

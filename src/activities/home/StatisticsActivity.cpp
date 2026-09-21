@@ -41,11 +41,7 @@ void StatisticsActivity::focusSelectedDayBooks() {
 
   focus = Focus::Book;
   selectedBookIndex = 0;
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  const int contentHeight =
-      renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing;
-  ensureSelectionVisible(contentHeight);
+  ensureSelectionVisible(contentBottom() - contentTop());
   requestUpdate();
 }
 
@@ -83,6 +79,16 @@ int StatisticsActivity::totalHistoryHeight() const {
     if (index + 1 < static_cast<int>(history.days.size())) height += dayGap();
   }
   return height;
+}
+
+int StatisticsActivity::contentTop() const {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  return metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
+}
+
+int StatisticsActivity::contentBottom() const {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  return renderer.getScreenHeight() - metrics.buttonHintsHeight - metrics.verticalSpacing;
 }
 
 void StatisticsActivity::ensureSelectionVisible(const int contentHeight) {
@@ -280,18 +286,17 @@ void StatisticsActivity::render(RenderLock&&) {
   renderer.clearScreen();
 
   const int pageWidth = renderer.getScreenWidth();
-  const int pageHeight = renderer.getScreenHeight();
   const auto& metrics = UITheme::getInstance().getMetrics();
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_STATISTICS));
 
-  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  const int contentBottom = pageHeight - metrics.buttonHintsHeight - metrics.verticalSpacing;
+  const int top = contentTop();
+  const int bottom = contentBottom();
   if (!history.clockAvailable) {
-    const int middle = contentTop + (contentBottom - contentTop) / 2;
+    const int middle = top + (bottom - top) / 2;
     renderer.drawCenteredText(UI_12_FONT_ID, middle - 18, tr(STR_STATISTICS_UNAVAILABLE), true, EpdFontFamily::BOLD);
     renderer.drawCenteredText(UI_10_FONT_ID, middle + 16, tr(STR_STATISTICS_CLOCK_REQUIRED));
   } else {
-    renderHistory(contentTop, contentBottom);
+    renderHistory(top, bottom);
   }
 
   const auto labels =
@@ -302,10 +307,7 @@ void StatisticsActivity::render(RenderLock&&) {
 }
 
 void StatisticsActivity::loop() {
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  const int contentHeight =
-      renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing;
+  const int contentHeight = contentBottom() - contentTop();
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (focus == Focus::Book) {
@@ -335,7 +337,7 @@ void StatisticsActivity::loop() {
     return;
   }
 
-  handleTouch(contentTop, contentHeight);
+  handleTouch(contentTop(), contentHeight);
 
   const auto swipe = mappedInput.wasSwipe();
   if (swipe == MappedInputManager::SwipeDir::Up) {
