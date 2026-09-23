@@ -38,6 +38,23 @@ struct ReadingStatisticsVisitResult {
   int currentStreak = 0;
 };
 
+// One book's aggregate reading time for one civil day, as produced by the
+// statistics import parser. Carries the day it belongs to inline so the import
+// can stream an export document and commit each parsed book as soon as its
+// object closes, without buffering the whole payload. Fixed-size fields mirror
+// the export document (schema v2); a book without an SD path (v1 export) has an
+// empty `path` and is keyed by title+author on merge.
+struct StatisticsImportBook {
+  int64_t dayNumber = 0;  // Local-time civil day; derives the per-day file.
+  uint32_t activeSeconds = 0;
+  int64_t lastReadAt = 0;  // UTC epoch; matches the export's session "end".
+  char date[16] = {};      // "YYYY-MM-DD" verbatim from the payload.
+  char path[256] = {};
+  char title[256] = {};
+  char author[128] = {};
+  char coverBmpPath[256] = {};
+};
+
 class StatisticsStore {
  public:
   using DayVisitor = bool (*)(void* context, const DailyReadingStatistics& day);
@@ -60,6 +77,14 @@ class StatisticsStore {
   ReadingStatisticsHistory getHistory();
   ReadingStatisticsVisitResult visitHistory(void* context, DayVisitor visitor);
   void updateBookPath(const std::string& oldPath, const std::string& newPath);
+
+  // Merge one imported book's aggregate reading time for a single day into the
+  // persisted store. Called by the import stream as each book object closes;
+  // books never share between two days, so the day is carried inline. Books are
+  // keyed by `book.path` when present, otherwise by title+author (imports of
+  // the path-less v1 export). Repeated imports of the same data accumulate
+  // rather than overwrite. Returns false only on an SD read/write failure.
+  bool mergeImportedBook(const StatisticsImportBook& book);
 
  private:
   StatisticsStore() = default;

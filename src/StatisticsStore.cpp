@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 
 #include "CrossPointSettings.h"
 
@@ -305,6 +306,68 @@ void StatisticsStore::updateBookPath(const std::string& oldPath, const std::stri
   if (changed && !PersistableStoreBase::writeDocToFile(filePath.c_str(), doc)) {
     LOG_ERR(MODULE, "Failed to update moved book path in statistics");
   }
+}
+
+// Stable merge key for a book whose payload carried no SD path (v1 export).
+// Deterministic by title+author so re-importing the same data accumulates under
+// one key, even though the key cannot resolve to an on-device file.
+static void importSyntheticKey(const StatisticsImportBook& book, char* out, const size_t outSize) {
+  snprintf(out, outSize, "imported:%s\x1f%s", book.title[0] != '\0' ? book.title : "?", book.author);
+}
+
+bool StatisticsStore::mergeImportedBook(const StatisticsImportBook& book) {
+  if (book.activeSeconds == 0) return true;
+
+  char keyBuf[sizeof(book.path) + sizeof(book.title) + sizeof(book.author) + 16];
+  const char* key = book.path[0] != '\0' ? book.path : keyBuf;
+  if (key == keyBuf) importSyntheticKey(book, keyBuf, sizeof(keyBuf));
+
+  Storage.ensureDirectoryExists(DIRECTORY);
+  const std::string filePath = filePathForDay(book.dayNumber);
+  JsonDocument doc;
+  if (Storage.exists(filePath.c_str()) && !PersistableStoreBase::readDocFromFile(filePath.c_str(), doc)) {
+    LOG_ERR(MODULE, "Could not load statistics file: %s", filePath.c_str());
+    return false;
+  }
+
+  doc["date"] = ReadingTime::dateString(book.dayNumber);
+  // Preserve sessions already persisted for this day; only create the array when
+  // the key is absent (to<T>() clears first, mirroring appendSession).
+  JsonArray sessions = doc["sessions"].as<JsonArray>();
+  if (sessions.isNull()) sessions = doc["sessions"].to<JsonArray>();
+
+  JsonObject match;
+  for (JsonObject session : sessions) {
+    if (strcmp(session["path"] | "", key) == 0) {
+      match = session;
+      break;
+    }
+  }
+
+  if (match.isNull()) {
+    JsonObject session = sessions.add<JsonObject>();
+    session["path"] = key;
+    session["title"] = book.title;
+    session["author"] = book.author;
+    session["coverBmpPath"] = book.coverBmpPath;
+    session["start"] = book.lastReadAt;
+    session["end"] = book.lastReadAt;
+    session["offsetMinutes"] = 0;
+    session["seconds"] = book.activeSeconds;
+  } else {
+    // Merge accumulates: sum the active time, widen the last-read window, and
+    // fill blank metadata only (an existing session's real identity wins).
+    const uint32_t existingSeconds = match["seconds"] | 0U;
+    match["seconds"] = static_cast<uint32_t>(existingSeconds + book.activeSeconds);
+    const int64_t existingEnd = match["end"] | static_cast<int64_t>(0);
+    if (book.lastReadAt > existingEnd) match["end"] = book.lastReadAt;
+    if ((match["title"] | "")[0] == '\0' && book.title[0] != '\0') match["title"] = book.title;
+    if ((match["author"] | "")[0] == '\0' && book.author[0] != '\0') match["author"] = book.author;
+    if ((match["coverBmpPath"] | "")[0] == '\0' && book.coverBmpPath[0] != '\0')
+      match["coverBmpPath"] = book.coverBmpPath;
+  }
+
+  return PersistableStoreBase::writeDocToFile(filePath.c_str(), doc);
 }
 
 void StatisticsStore::pruneOldFiles(const int64_t todayDayNumber) {

@@ -20,6 +20,7 @@
 #include "OpdsServerStore.h"
 #include "SdCardFontSystem.h"
 #include "SettingsList.h"
+#include "StatisticsImportHandler.h"
 #include "StatisticsStore.h"
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
@@ -208,6 +209,13 @@ bool writeStatisticsDay(void* opaqueContext, const DailyReadingStatistics& day) 
     if (!writer.writeUnsigned(book.activeSeconds)) return false;
     if (!writer.write(",\"lastReadAt\":")) return false;
     if (!writer.writeSigned(book.lastReadAt)) return false;
+    // Schema v2 carries the on-device paths so the import can round-trip
+    // losslessly (books stay tied to SD files and merge by path). v1 clients
+    // ignore the extra fields.
+    if (!writer.write(",\"path\":")) return false;
+    if (!writer.writeJsonString(book.path)) return false;
+    if (!writer.write(",\"coverBmpPath\":")) return false;
+    if (!writer.writeJsonString(book.coverBmpPath)) return false;
     if (!writer.write("}")) return false;
   }
   return writer.write("]}");
@@ -325,6 +333,10 @@ void CrossPointWebServer::begin() {
                                   "Lock-Token", "Timeout",     "Authorization", "X-CrossPoint-OTP"};
   server->collectHeaders(requestHeaders, std::size(requestHeaders));
   server->addHandler(new WebDAVHandler());  // Note: WebDAVHandler will be deleted by WebServer when server is stopped
+  // Statistics import uses the same one-time pairing token as the export. The
+  // handler is owned (and later deleted) by the WebServer, and holds a
+  // reference to statisticsAuth, a member that outlives the server.
+  server->addHandler(new StatisticsImportHandler(statisticsAuth));
   LOG_DBG("WEB", "WebDAV handler initialized");
 
   server->begin();
@@ -647,7 +659,7 @@ void CrossPointWebServer::handleStatisticsExport() const {
 
   ChunkedJsonWriter writer(*server);
   StatisticsExportContext context{&writer};
-  writer.write("{\"schemaVersion\":1,\"days\":[");
+  writer.write("{\"schemaVersion\":2,\"days\":[");
   const auto summary = READING_STATISTICS.visitHistory(&context, writeStatisticsDay);
   writer.write("],\"clockAvailable\":");
   writer.write(summary.clockAvailable ? "true" : "false");
