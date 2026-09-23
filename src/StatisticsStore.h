@@ -86,6 +86,10 @@ class StatisticsStore {
   // rather than overwrite. Returns false only on an SD read/write failure.
   bool mergeImportedBook(const StatisticsImportBook& book);
 
+  // Local epoch seconds (UTC time shifted by the configured clock offset).
+  // Returns false when the RTC has no valid time.
+  static bool getEpochSeconds(int64_t& localEpoch) { return getLocalEpoch(localEpoch); }
+
  private:
   StatisticsStore() = default;
 

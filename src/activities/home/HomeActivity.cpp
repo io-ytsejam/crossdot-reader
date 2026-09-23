@@ -21,6 +21,7 @@
 #include "components/UITheme.h"
 #include "components/themes/BaseTheme.h"
 #include "fontIds.h"
+#include "network/CloudSyncService.h"
 
 int HomeActivity::getMenuItemCount() const {
   int count = 5;  // File Browser, Recents, File transfer, Settings, Statistics
@@ -289,8 +290,17 @@ void HomeActivity::render(RenderLock&&) {
   renderer.clearScreen();
   bool bufferRestored = coverBufferStored && restoreCoverBuffer();
 
+  // Right-side header subtitle shows the cloud sync status when configured;
+  // otherwise the header stays clean for users who don't use the feature.
+  std::string syncSubtitle;
+  const char* subtitle = nullptr;
+  if (CLOUD_SYNC_SERVICE.isConfigured()) {
+    syncSubtitle = CLOUD_SYNC_SERVICE.getStatusLabel();
+    subtitle = syncSubtitle.c_str();
+  }
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.homeTopPadding},
-                 metrics.homeContinueReadingInMenu && !recentBooks.empty() ? recentBooks[0].title.c_str() : nullptr);
+                 metrics.homeContinueReadingInMenu && !recentBooks.empty() ? recentBooks[0].title.c_str() : nullptr,
+                 subtitle);
 
   // Record the tile rect so storeCoverBuffer (called from the theme) knows
   // which sub-region of the framebuffer to snapshot. ~16 KB in Portrait
@@ -333,8 +343,6 @@ void HomeActivity::render(RenderLock&&) {
   const auto labels = mappedInput.mapLabels(recentBooks.empty() ? "" : tr(STR_RESUME), tr(STR_SELECT), tr(STR_DIR_UP),
                                             tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-
-  renderer.drawText(SMALL_FONT_ID, metrics.homeTopPadding, metrics.homeTopPadding, "Hello, world!");
 
   renderer.displayBuffer();
 

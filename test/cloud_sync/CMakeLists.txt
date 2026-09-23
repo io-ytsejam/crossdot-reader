@@ -1,0 +1,3 @@
+add_executable(cloud_sync_test cloud_sync_test.cpp)
+target_link_libraries(cloud_sync_test PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(cloud_sync_test)

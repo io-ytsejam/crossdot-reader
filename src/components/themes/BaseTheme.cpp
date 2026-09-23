@@ -861,14 +861,22 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
 
   // Draw daily reading goal ring (requires RTC-backed statistics; caller passes
   // a negative progress when the value is unknown, e.g. outside a read session).
+  // Once the goal is met the arc becomes a checkmark instead of a closed circle.
   if (sb.showDailyGoal && halClock.isAvailable() && dailyGoalProgress >= 0.0f) {
     constexpr int ringRadius = 6;
     constexpr int ringStroke = 2;
     constexpr int ringDiameter = ringRadius * 2 + 1;
     const int ringGap = leftClusterWidth > 0 ? 6 : 0;
     const int rowHeight = std::max(metrics.batteryHeight, renderer.getLineHeight(SMALL_FONT_ID));
-    UITheme::drawProgressRing(renderer, leftClusterX + leftClusterWidth + ringGap + ringRadius, textY + rowHeight / 2,
-                              ringRadius, ringStroke, dailyGoalProgress);
+    const int ringCx = leftClusterX + leftClusterWidth + ringGap + ringRadius;
+    const int ringCy = textY + rowHeight / 2;
+    if (dailyGoalProgress >= 1.0f) {
+      // Goal met: a checkmark that fits inside the ring's footprint.
+      renderer.drawLine(ringCx - 4, ringCy - 2, ringCx - 1, ringCy + 4, ringStroke, true);
+      renderer.drawLine(ringCx - 1, ringCy + 4, ringCx + 5, ringCy - 4, ringStroke, true);
+    } else {
+      UITheme::drawProgressRing(renderer, ringCx, ringCy, ringRadius, ringStroke, dailyGoalProgress);
+    }
     leftClusterWidth += ringGap + ringDiameter;
   }
 
