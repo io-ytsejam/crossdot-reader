@@ -50,3 +50,11 @@ add_subdirectory(reading_time)
 add_subdirectory(statistics_session_auth)
 add_subdirectory(statistics_import_parser)
 add_subdirectory(cloud_sync)
+add_subdirectory(cloud_sync_response)
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME cloud_sync_export
+  COMMAND ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_CURRENT_SOURCE_DIR}/cloud_sync_export -v)
+set_tests_properties(cloud_sync_export PROPERTIES
+  ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
+  TIMEOUT 30)

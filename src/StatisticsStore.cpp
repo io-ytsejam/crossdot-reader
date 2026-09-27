@@ -12,7 +12,6 @@
 #include <cstring>
 
 #include "CrossPointSettings.h"
-#include "network/CloudSyncService.h"
 
 namespace {
 constexpr const char* MODULE = "STS";
@@ -180,10 +179,6 @@ void StatisticsStore::endReading() {
   baselineDayNumber = 0;
   baselineSeconds = 0;
   todayActiveSecondsSnapshot = 0;
-
-  // New reading time has been persisted: nudge the cloud sync so an upload is
-  // due immediately rather than waiting out the interval.
-  CloudSyncService::getInstance().markDataChanged();
 }
 
 DailyReadingStatistics StatisticsStore::loadDay(const int64_t dayNumber) {

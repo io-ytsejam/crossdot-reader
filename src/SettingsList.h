@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "CloudSyncStore.h"
 #include "CrossPointSettings.h"
 #include "KOReaderCredentialStore.h"
 #include "ReaderFontSizes.h"
@@ -370,6 +371,18 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
               KOREADER_STORE.saveToFile();
             },
             "koSyncBehavior", StrId::STR_KOREADER_SYNC),
+        // --- Cloud Sync (web-only, uses CloudSyncStore; on-device submenu shows status) ---
+        SettingInfo::DynamicEnum(
+            StrId::STR_CLOUD_SYNC_ENABLE, {StrId::STR_STATE_OFF, StrId::STR_STATE_ON},
+            [] { return static_cast<uint8_t>(CLOUD_SYNC_STORE.isEnabled()); },
+            [](uint8_t v) { CLOUD_SYNC_STORE.setEnabled(v != 0); }, "cloudSyncEnabled", StrId::STR_CLOUD_SYNC),
+        SettingInfo::DynamicString(
+            StrId::STR_CLOUD_SYNC_SERVER_URL, [] { return CLOUD_SYNC_STORE.getServerUrl(); },
+            [](const std::string& v) { CLOUD_SYNC_STORE.setServerUrl(v); }, "cloudSyncServerUrl",
+            StrId::STR_CLOUD_SYNC),
+        SettingInfo::DynamicString(
+            StrId::STR_CLOUD_SYNC_TOKEN, [] { return CLOUD_SYNC_STORE.getToken(); },
+            [](const std::string& v) { CLOUD_SYNC_STORE.setToken(v); }, "cloudSyncToken", StrId::STR_CLOUD_SYNC),
         // --- Status Bar Settings (web-only, uses StatusBarSettingsActivity) ---
         SettingInfo::Toggle(StrId::STR_CHAPTER_PAGE_COUNT, &CrossPointSettings::statusBarChapterPageCount,
                             "statusBarChapterPageCount", StrId::STR_CUSTOMISE_STATUS_BAR),

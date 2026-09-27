@@ -19,14 +19,15 @@
 
 #include <cstring>
 
+#include "CloudSyncStore.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
-#include "CloudSyncStore.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "WifiCredentialStore.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
@@ -315,6 +316,7 @@ void setup() {
   KOREADER_STORE.loadFromFile();
   OPDS_STORE.loadFromFile();
   CLOUD_SYNC_STORE.loadFromFile();
+  WIFI_STORE.loadFromFile();
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
 
@@ -369,6 +371,35 @@ void setup() {
                             : !APP_STATE.showBootScreen ? BootResume::QuickResume
                                                         : BootResume::Splash;
   bool allowFastInitialReaderRefresh = false;
+
+  // TLS needs its peak heap before the framebuffer, font caches and reader
+  // exist. Finish the bounded boot upload first, then release boot-owned Wi-Fi.
+  // Recovery/panic screens must remain available even with a broken network.
+  if (!recoveryFirmwareMode && !HalSystem::isRebootFromPanic() && CLOUD_SYNC_SERVICE.isConfigured() &&
+      WIFI_STORE.getCredentials().size() > 0) {
+    const std::string lastSsid = WIFI_STORE.getLastConnectedSsid();
+    const WifiCredential* cred = WIFI_STORE.findCredential(lastSsid);
+    if (cred) {
+      WiFi.onEvent(
+          [](WiFiEvent_t, WiFiEventInfo_t info) {
+            LOG_INF("CSYNC", "Boot Wi-Fi disconnected: reason=%u", info.wifi_sta_disconnected.reason);
+          },
+          ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+      WiFi.persistent(false);
+      WiFi.mode(WIFI_STA);
+      WiFi.disconnect(true, true);
+      delay(100);
+      if (!cred->password.empty()) {
+        WiFi.begin(lastSsid.c_str(), cred->password.c_str());
+      } else {
+        WiFi.begin(lastSsid.c_str());
+      }
+      LOG_INF("MAIN", "Initiated boot join to saved network: %s", lastSsid.c_str());
+      CLOUD_SYNC_SERVICE.start(true);
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+    }
+  }
 
   setupDisplayAndFonts(resume != BootResume::Splash);
 
@@ -457,11 +488,6 @@ void setup() {
   // Ensure we're not still holding the power button before leaving setup
   waitForPowerRelease();
   allowSleepAt = millis() + 2000;
-
-  // Start the periodic cloud sync (no-op unless enabled and configured). The
-  // task only connects when it observes a live Wi-Fi link, so it is safe to
-  // run even when the device boots straight into reader or without network.
-  CLOUD_SYNC_SERVICE.start();
 }
 
 void loop() {
