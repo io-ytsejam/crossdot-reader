@@ -89,6 +89,10 @@ void HalDisplay::deepSleep() { einkDisplay.deepSleep(); }
 
 uint8_t* HalDisplay::getFrameBuffer() const { return einkDisplay.getFrameBuffer(); }
 
+void HalDisplay::releaseFrameBuffer() { einkDisplay.releaseBuffers(); }
+
+bool HalDisplay::reallocFrameBuffer() { return einkDisplay.reallocBuffers(); }
+
 uint8_t* HalDisplay::lendFrameBufferStorage(uint32_t* sizeOut) { return einkDisplay.lendBuildStorage(sizeOut); }
 
 void HalDisplay::returnFrameBufferStorage() { einkDisplay.returnBuildStorage(); }

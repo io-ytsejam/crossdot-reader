@@ -27,6 +27,7 @@
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "StatisticsStore.h"
 #include "WifiCredentialStore.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
@@ -34,6 +35,7 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "images/LoadingIcon.h"
+#include "network/CloudSyncPolicy.h"
 #include "network/CloudSyncService.h"
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
@@ -138,6 +140,115 @@ enum class BootResume : uint8_t {
 // device back up against the user's sleep gesture. Never cleared:
 // startDeepSleep() does not return, so a set latch only ends at the wakeup reset.
 static bool deepSleepInProgress = false;
+
+enum class ReaderCloudSyncPhase : uint8_t { Pending, JoiningWifi, Finished };
+static ReaderCloudSyncPhase readerCloudSyncPhase = ReaderCloudSyncPhase::Pending;
+static uint32_t readerCloudSyncWifiStartedAt = 0;
+
+static void stopReaderCloudSyncWifi() {
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+}
+
+static bool finishReaderCloudSync() {
+  LOG_INF("CSYNC", "Reader sync waiting for render lock");
+  {
+    RenderLock lock(RenderLock::Mode::Try);
+    if (!lock.locked()) return false;
+    LOG_INF("CSYNC", "Reader sync acquired render lock; drawing warning");
+    GUI.drawPopup(renderer, tr(STR_CLOUD_SYNC_READER_PAUSE));
+  }
+  LOG_INF("CSYNC", "Reader sync indicator displayed; controls paused");
+
+  if (!READING_STATISTICS.checkpointReading()) {
+    LOG_ERR("CSYNC", "Could not checkpoint active reading statistics");
+  }
+
+  display.releaseFrameBuffer();
+  LOG_INF("CSYNC", "Reader framebuffer released; starting HTTPS task");
+  CLOUD_SYNC_SERVICE.start(false);
+  uint32_t lastWaitLog = millis();
+  while (!CLOUD_SYNC_SERVICE.isComplete()) {
+    mappedInputManager.update();
+    if (static_cast<uint32_t>(millis() - lastWaitLog) >= 1000U) {
+      LOG_INF("CSYNC", "Waiting for HTTPS task");
+      lastWaitLog = millis();
+    }
+    delay(10);
+  }
+  LOG_INF("CSYNC", "HTTPS task completed; restoring reader");
+  stopReaderCloudSyncWifi();
+
+  if (!display.reallocFrameBuffer()) {
+    LOG_ERR("CSYNC", "Failed to restore framebuffer after reader sync; restarting");
+    ESP.restart();
+    return true;
+  }
+  renderer.begin();
+  activityManager.requestUpdateAndWait();
+  LOG_INF("CSYNC", "Reader page restored after sync");
+
+  // Clear physical edges collected while controls were paused.
+  mappedInputManager.update();
+  return true;
+}
+
+static void serviceReaderCloudSync(const uint32_t lastActivityTime) {
+  if (readerCloudSyncPhase == ReaderCloudSyncPhase::Finished || !CLOUD_SYNC_SERVICE.isConfigured()) return;
+
+  const bool readerBusy = activityManager.preventAutoSleep() || activityManager.skipLoopDelay() || RenderLock::peek();
+  const bool readerIdle = CloudSyncPolicy::readerIdleForSync(millis(), lastActivityTime,
+                                                             activityManager.isCurrentReaderActivity(), readerBusy);
+
+  if (readerCloudSyncPhase == ReaderCloudSyncPhase::Pending) {
+    if (!readerIdle) return;
+    const std::string& ssid = WIFI_STORE.getLastConnectedSsid();
+    const WifiCredential* credential = WIFI_STORE.findCredential(ssid);
+    if (!credential) {
+      readerCloudSyncPhase = ReaderCloudSyncPhase::Finished;
+      return;
+    }
+
+    WiFi.onEvent(
+        [](WiFiEvent_t, WiFiEventInfo_t info) {
+          const uint8_t reason = info.wifi_sta_disconnected.reason;
+          LOG_INF("CSYNC", "Reader Wi-Fi disconnected: reason=%u", reason);
+          CLOUD_SYNC_SERVICE.notifyWifiDisconnected(reason);
+        },
+        ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+    // The idle loop drops the CPU to LOW_POWER_FREQ (10 MHz) after 3 s; the radio
+    // cannot start at that clock and WiFi.mode() hangs. Restore full speed first;
+    // setPowerSaving() then stays disabled while Wi-Fi mode is non-null.
+    LOG_INF("CSYNC", "Reader idle; restoring CPU clock before Wi-Fi start");
+    powerManager.setPowerSaving(false);
+    WiFi.persistent(false);
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(true, true);
+    delay(100);
+    CLOUD_SYNC_SERVICE.prepareWifiJoin();
+    readerCloudSyncWifiStartedAt = millis();
+    if (credential->password.empty()) {
+      WiFi.begin(ssid.c_str());
+    } else {
+      WiFi.begin(ssid.c_str(), credential->password.c_str());
+    }
+    readerCloudSyncPhase = ReaderCloudSyncPhase::JoiningWifi;
+    LOG_INF("CSYNC", "Reader-idle join started for saved network: %s", ssid.c_str());
+    return;
+  }
+
+  if (CLOUD_SYNC_SERVICE.didWifiJoinFail() ||
+      static_cast<uint32_t>(millis() - readerCloudSyncWifiStartedAt) >= CloudSyncPolicy::BOOT_WIFI_TIMEOUT_MS) {
+    LOG_INF("CSYNC", "Reader-idle Wi-Fi unavailable; skipping sync this session");
+    stopReaderCloudSyncWifi();
+    readerCloudSyncPhase = ReaderCloudSyncPhase::Finished;
+    return;
+  }
+
+  if (WiFi.status() == WL_CONNECTED && readerIdle) {
+    if (finishReaderCloudSync()) readerCloudSyncPhase = ReaderCloudSyncPhase::Finished;
+  }
+}
 
 void silentRestart() {
   if (deepSleepInProgress) return;  // sleeping supersedes the heap-defrag reboot
@@ -372,37 +483,10 @@ void setup() {
                                                         : BootResume::Splash;
   bool allowFastInitialReaderRefresh = false;
 
-  // TLS needs its peak heap before the framebuffer, font caches and reader
-  // exist. Finish the bounded boot upload first, then release boot-owned Wi-Fi.
-  // Recovery/panic screens must remain available even with a broken network.
-  if (!recoveryFirmwareMode && !HalSystem::isRebootFromPanic() && CLOUD_SYNC_SERVICE.isConfigured() &&
-      WIFI_STORE.getCredentials().size() > 0) {
-    const std::string lastSsid = WIFI_STORE.getLastConnectedSsid();
-    const WifiCredential* cred = WIFI_STORE.findCredential(lastSsid);
-    if (cred) {
-      WiFi.onEvent(
-          [](WiFiEvent_t, WiFiEventInfo_t info) {
-            LOG_INF("CSYNC", "Boot Wi-Fi disconnected: reason=%u", info.wifi_sta_disconnected.reason);
-          },
-          ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
-      WiFi.persistent(false);
-      WiFi.mode(WIFI_STA);
-      WiFi.disconnect(true, true);
-      delay(100);
-      if (!cred->password.empty()) {
-        WiFi.begin(lastSsid.c_str(), cred->password.c_str());
-      } else {
-        WiFi.begin(lastSsid.c_str());
-      }
-      LOG_INF("MAIN", "Initiated boot join to saved network: %s", lastSsid.c_str());
-      CLOUD_SYNC_SERVICE.start(true);
-      WiFi.disconnect(true);
-      WiFi.mode(WIFI_OFF);
-    }
-  }
-
   setupDisplayAndFonts(resume != BootResume::Splash);
 
+  // Paint visible feedback before any network wait. E-ink retains this frame
+  // while the framebuffer is temporarily returned to the heap for TLS below.
   switch (resume) {
     case BootResume::Silent:
       // Splash skipped: the routing block below picks the target activity; the
@@ -590,6 +674,8 @@ void loop() {
   if (gpio.wasUsbStateChanged()) {
     activityManager.requestUpdate();
   }
+
+  serviceReaderCloudSync(lastActivityTime);
 
   const unsigned long activityStartTime = millis();
   activityManager.loop();

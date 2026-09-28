@@ -14,6 +14,9 @@ class BookMetadataCache {
     std::string title;
     std::string author;
     std::string language;
+    // EPUB dc:identifier. Usually a URN (ISBN or UUID); exported as an ISBN when
+    // it carries one so the server can resolve a printed page count.
+    std::string identifier;
     std::string coverItemHref;
     std::string textReferenceHref;
   };

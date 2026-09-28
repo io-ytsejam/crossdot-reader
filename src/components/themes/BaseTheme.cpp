@@ -392,6 +392,17 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
   }
 }
 
+void BaseTheme::drawTopBarStatus(const GfxRenderer& renderer, Rect headerRect, const char* label) const {
+  if (label == nullptr) return;
+  // Top-left of the header band, first text line, left content padding. Kept
+  // clear of the battery (right side) and of the subtitle slot, which in Lyra
+  // sits at rect.y + 50 and would land under the recent-book tile highlight.
+  auto truncated = renderer.truncatedText(
+      SMALL_FONT_ID, label, headerRect.width / 2 - BaseMetrics::values.contentSidePadding, EpdFontFamily::REGULAR);
+  renderer.drawText(SMALL_FONT_ID, headerRect.x + BaseMetrics::values.contentSidePadding, headerRect.y + 4,
+                    truncated.c_str(), true);
+}
+
 void BaseTheme::drawSubHeader(const GfxRenderer& renderer, Rect rect, const char* label, const char* rightLabel) const {
   constexpr int maxListValueWidth = 200;
 

@@ -274,6 +274,8 @@ bool ActivityManager::isReaderActivity() const {
          (currentActivity && currentActivity->isReaderActivity());
 }
 
+bool ActivityManager::isCurrentReaderActivity() const { return currentActivity && currentActivity->isReaderActivity(); }
+
 bool ActivityManager::handleForcedRefresh() { return currentActivity && currentActivity->handleForcedRefresh(); }
 
 bool ActivityManager::skipLoopDelay() const { return currentActivity && currentActivity->skipLoopDelay(); }
@@ -331,6 +333,11 @@ void ActivityManager::requestUpdateAndWait() {
 RenderLock::RenderLock() {
   xSemaphoreTake(activityManager.renderingMutex, portMAX_DELAY);
   isLocked = true;
+}
+
+RenderLock::RenderLock(const Mode mode) {
+  const TickType_t timeout = mode == Mode::Wait ? portMAX_DELAY : 0;
+  isLocked = xSemaphoreTake(activityManager.renderingMutex, timeout) == pdTRUE;
 }
 
 RenderLock::RenderLock([[maybe_unused]] Activity&) {

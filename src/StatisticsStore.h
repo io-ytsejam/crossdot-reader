@@ -67,6 +67,7 @@ class StatisticsStore {
   bool beginReading(const std::string& path, const std::string& title, const std::string& author = {},
                     const std::string& coverBmpPath = {});
   void recordPageTurn();
+  bool checkpointReading();
   void endReading();
 
   // Fraction of the daily reading goal reached so far (0..1), including the

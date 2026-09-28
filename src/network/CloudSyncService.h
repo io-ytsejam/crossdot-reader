@@ -5,18 +5,18 @@
 #include <string>
 
 // A single upload of reading statistics to the Le Biblioteq ingest endpoint,
-// run once per boot when the reader is awake and on Wi-Fi (battery-friendly: no
-// periodic polling or retries during a session). Runs on its own FreeRTOS task
-// so the main loop is never blocked by a slow HTTPS request. Owns no render
-// state; the UI polls getStatus()/getStatusLabel() on the render path.
+// run once per awake session after a reading page has stayed still for five
+// seconds (battery-friendly: no periodic polling or retries). Runs on its own
+// FreeRTOS task; the main task intentionally pauses reader controls only while
+// the framebuffer is lent to TLS.
 class CloudSyncService {
  public:
   enum class Status {
     Disabled,  // feature off or config incomplete
-    Idle,      // enabled, waiting for Wi-Fi at boot
+    Idle,      // enabled, waiting for a reader-idle opportunity
     Syncing,   // the upload is in progress
     Synced,    // upload succeeded; lastSyncedAt is fresh
-    Failed,    // upload failed or no Wi-Fi within the boot window
+    Failed,    // upload failed or saved Wi-Fi was unavailable
   };
 
   static CloudSyncService& getInstance();
@@ -26,18 +26,23 @@ class CloudSyncService {
 
   // Main-task accessors for UI rendering. getStatusLabel() returns a tr()-
   // sourced, stack-safe string ready for drawText.
-  Status getStatus() const { return status.load(); }
+  Status getStatus() const { return status.load(std::memory_order_acquire); }
+  bool isComplete() const { return completed.load(std::memory_order_acquire); }
+  bool didWifiJoinFail() const { return wifiJoinFailed.load(std::memory_order_acquire); }
   std::string getStatusLabel() const;
   // True when the user has enabled the feature and server+token are present.
   bool isConfigured() const;
 
-  // At boot, wait before allocating display/fonts/activities: TLS and the UI
-  // cannot safely share the C3's heap at their peak. Settings can still start
-  // asynchronously. One attempt per boot; Wi-Fi and HTTP waits are bounded.
+  // Start the one-shot HTTPS worker after visible feedback is painted and the
+  // framebuffer is temporarily released for TLS.
   void start(bool waitForCompletion = false);
 
-  // How long to keep waiting at boot for Wi-Fi before giving up this session.
-  static constexpr uint32_t BOOT_WIFI_TIMEOUT_MS = 60U * 1000U;
+  // Reset join state immediately before the reader-idle WiFi.begin().
+  void prepareWifiJoin();
+
+  // Called from the Arduino Wi-Fi event callback. Definitive join failures
+  // end the opportunistic attempt instead of waiting for the fallback timeout.
+  void notifyWifiDisconnected(uint8_t reason);
 
  private:
   CloudSyncService() = default;
@@ -51,6 +56,8 @@ class CloudSyncService {
   // Written only on the background task; read on the main task.
   std::atomic<Status> status{Status::Disabled};
   std::atomic<bool> completed{true};
+  std::atomic<bool> wifiJoinFailed{false};
+  std::atomic<uint32_t> wifiJoinStartedAt{0};
 };
 
 #define CLOUD_SYNC_SERVICE CloudSyncService::getInstance()

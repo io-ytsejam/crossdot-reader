@@ -72,7 +72,6 @@ void CloudSyncSettingsActivity::handleSelection() {
       return;
     }
     CLOUD_SYNC_STORE.setEnabled(next);
-    CLOUD_SYNC_SERVICE.start();
     requestUpdate();
   } else if (selectedIndex == 1) {
     // Server URL

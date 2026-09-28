@@ -214,6 +214,11 @@ class BaseTheme {
                           const char* subtitle = nullptr) const;
   virtual void drawSubHeader(const GfxRenderer& renderer, Rect rect, const char* label,
                              const char* rightLabel = nullptr) const;
+  // Small left-aligned status label inside a header's top bar.
+  // Call after drawHeader/drawRecentBookCover so the label stays on top: the
+  // header subtitle slot sits low in some themes (Lyra draws it at rect.y + 50)
+  // and would otherwise end up under the recent-book tile highlight.
+  virtual void drawTopBarStatus(const GfxRenderer& renderer, Rect headerRect, const char* label) const;
   virtual void drawTabBar(const GfxRenderer& renderer, Rect rect, const std::vector<TabInfo>& tabs,
                           bool selected) const;
   virtual bool tabIndexFromPoint(const GfxRenderer& renderer, Rect rect, const std::vector<TabInfo>& tabs, int x, int y,

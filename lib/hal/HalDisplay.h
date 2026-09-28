@@ -58,6 +58,13 @@ class HalDisplay {
   // Access to frame buffer
   uint8_t* getFrameBuffer() const;
 
+  // After a frame is physically visible, temporarily return the ~48 KB
+  // framebuffer to the heap for a single memory-heavy boot phase (TLS). The
+  // panel retains its image. reallocFrameBuffer() restores a white buffer;
+  // callers must refresh GfxRenderer's cached pointer and fully redraw.
+  void releaseFrameBuffer();
+  bool reallocFrameBuffer();
+
   // Lend the framebuffer's ~48 KB STORAGE to a memory-hungry phase (chapter
   // builds) without freeing it: the allocation never moves, so repeated loans
   // cannot fragment the heap (free+realloc measurably did). No display calls

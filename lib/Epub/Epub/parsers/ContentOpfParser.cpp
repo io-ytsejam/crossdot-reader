@@ -30,6 +30,28 @@ bool startsWithImageMediaType(const std::string& mediaType) {
 
   return true;
 }
+
+// True when a dc:identifier value carries an ISBN, with or without the
+// urn:isbn: scheme, hyphens or spaces. Used to prefer it over a UUID identifier
+// when a book lists several.
+bool looksLikeIsbn(const std::string& raw) {
+  std::string s;
+  s.reserve(raw.size());
+  for (const char c : raw) {
+    if (c == '-' || c == ' ' || c == '\t' || c == '\r' || c == '\n') continue;
+    s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+  }
+  const std::string prefix = "urn:isbn:";
+  if (s.rfind(prefix, 0) == 0) s.erase(0, prefix.size());
+  if (s.size() != 10 && s.size() != 13) return false;
+  for (size_t i = 0; i < s.size(); ++i) {
+    const char c = s[i];
+    if (c >= '0' && c <= '9') continue;
+    if (i == 9 && s.size() == 10 && c == 'x') continue;  // ISBN-10 check digit
+    return false;
+  }
+  return true;
+}
 }  // namespace
 
 bool ContentOpfParser::setup() {
@@ -120,6 +142,12 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
 
   if (self->state == IN_METADATA && strcmp(name, "dc:language") == 0) {
     self->state = IN_BOOK_LANGUAGE;
+    return;
+  }
+
+  if (self->state == IN_METADATA && strcmp(name, "dc:identifier") == 0) {
+    self->state = IN_BOOK_IDENTIFIER;
+    self->identifierAccum.clear();
     return;
   }
 
@@ -356,6 +384,11 @@ void XMLCALL ContentOpfParser::characterData(void* userData, const XML_Char* s, 
     self->language.append(s, len);
     return;
   }
+
+  if (self->state == IN_BOOK_IDENTIFIER) {
+    self->identifierAccum.append(s, len);
+    return;
+  }
 }
 
 void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) {
@@ -392,6 +425,16 @@ void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) 
 
   if (self->state == IN_BOOK_LANGUAGE && strcmp(name, "dc:language") == 0) {
     self->state = IN_METADATA;
+    return;
+  }
+
+  if (self->state == IN_BOOK_IDENTIFIER && strcmp(name, "dc:identifier") == 0) {
+    self->state = IN_METADATA;
+    // Prefer an ISBN-looking identifier over an earlier UUID/fallback.
+    if (looksLikeIsbn(self->identifierAccum) || self->identifier.empty()) {
+      self->identifier = self->identifierAccum;
+    }
+    self->identifierAccum.clear();
     return;
   }
 

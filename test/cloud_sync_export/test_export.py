@@ -29,19 +29,31 @@ class CloudSyncExportTest(unittest.TestCase):
 #include <iostream>
 #include "StatisticsStore.h"
 '''+cap+'\n'+source[begin:end]+r'''
+// Host stub standing in for the device-side SD probe.
+static void stubProbe(const std::string& path, ExportBookStats& stats) {
+  stats = ExportBookStats{};
+  if (path == "cached.epub") { stats.progressPercent = 42; stats.totalPages = 312; stats.isbn = "9780451008169"; }
+}
 int main(int argc, char**) {
-  std::string out = "{\"schemaVersion\":2,\"days\":[";
+  std::string out = "{\"schemaVersion\":3,\"days\":[";
   ExportSink sink;
   sink.out = &out;
+  sink.readBookStats = &stubProbe;
   DailyReadingStatistics day;
   day.date = "2026-09-23";
   day.totalSeconds = 123;
-  day.books.reserve(1);
+  day.books.reserve(2);
   BookReadingStatistics book;
   book.title = "Quote \" slash \\ newline\n tab\t control\x01";
   book.author = "Zażółć";
   book.activeSeconds = 123;
+  book.path = "cached.epub";
   day.books.push_back(book);
+  BookReadingStatistics unprobed;
+  unprobed.title = "Fresh";
+  unprobed.author = "Nobody";
+  unprobed.activeSeconds = 1;
+  day.books.push_back(unprobed);
   for (int i = 1; i < argc; ++i) {
     if (!writeDay(&sink, day)) return 2;
     day.date = "2026-09-24";
@@ -68,12 +80,22 @@ int main(int argc, char**) {
 
     def test_empty_history(self):
         self.assertEqual(self.export(0)['days'], [])
+        self.assertEqual(self.export(0)['schemaVersion'], 3)
 
     def test_single_day_escapes_strings(self):
-        day = self.export(1)['days'][0]
-        self.assertEqual(day['books'][0]['title'], 'Quote " slash \\ newline\n tab\t control\x01')
-        self.assertEqual(day['books'][0]['author'], 'Zażółć')
-        self.assertEqual(day['books'][0]['activeSeconds'], 123)
+        book = self.export(1)['days'][0]['books'][0]
+        self.assertEqual(book['title'], 'Quote " slash \\ newline\n tab\t control\x01')
+        self.assertEqual(book['author'], 'Zażółć')
+        self.assertEqual(book['activeSeconds'], 123)
+        self.assertEqual(book['progress'], 42)
+        self.assertEqual(book['pages'], 312)
+        self.assertEqual(book['isbn'], '9780451008169')
+
+    def test_unprobed_book_omits_progress(self):
+        books = self.export(1)['days'][0]['books']
+        self.assertNotIn('progress', books[1])
+        self.assertNotIn('pages', books[1])
+        self.assertNotIn('isbn', books[1])
 
     def test_multiple_days_are_separated(self):
         days = self.export(2)['days']

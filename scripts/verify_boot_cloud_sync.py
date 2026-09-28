@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Capture and verify one real boot upload (requires pyserial).
+"""Capture and verify one reader-idle upload (requires pyserial).
 
-Run immediately after flashing/resetting. Does not read configuration, print
-credentials, synthesize traffic, or reset the device itself. A passing run
-requires the firmware's HTTP-200 + parsed {ok:true} confirmation, followed by
-UI initialization, without a transport error or panic.
+Start this while Home is visible, then open a book and leave a page untouched.
+The script does not read configuration, print credentials, synthesize traffic,
+or reset the device. A passing run requires Wi-Fi association only after the
+reader is active, a visible pause indicator, strict server confirmation, and
+restoration of the reading page without a panic.
 """
 import argparse
 from pathlib import Path
@@ -31,15 +32,25 @@ def main():
                 log.flush()
                 print(text, end='', flush=True)
                 lines.append(text)
-                if 'Boot sync finished: ok' in text:
+                if 'Reader page restored after sync' in text:
                     end = min(end, time.monotonic() + 15)
     text = ''.join(lines)
+    reader_markers = ('Entering activity: EpubReader', 'Entering activity: TxtReader',
+                      'Entering activity: XtcReader', 'Entering activity: Reader')
+    reader_positions = [text.index(marker) for marker in reader_markers if marker in text]
+    reader_entered = min(reader_positions) if reader_positions else -1
+    join_marker = 'Reader-idle join started for saved network:'
+    upload_started = 'Uploading statistics to ' in text
     requirements = {
-        'confirmed authenticated ingest': 'Statistics synced' in text and 'Boot sync finished: ok' in text,
-        'display initialized after upload': 'Display initialized' in text and 'Boot sync finished: ok' in text
-            and text.index('Boot sync finished: ok') < text.index('Display initialized'),
-        'UI resumed': 'Entering activity: Home' in text or 'Entering activity: Reader' in text
-            or 'Entering activity: EpubReader' in text,
+        'no boot-time cloud join': join_marker not in text or reader_entered >= 0
+            and reader_entered < text.index(join_marker),
+        'visible pause indicator before upload': 'Reader sync indicator displayed; controls paused' in text
+            and upload_started
+            and text.index('Reader sync indicator displayed; controls paused') < text.index('Uploading statistics to '),
+        'confirmed authenticated ingest': 'Statistics synced' in text and 'Reader sync finished: ok' in text,
+        'reader page restored': 'Reader sync finished: ok' in text
+            and 'Reader page restored after sync' in text
+            and text.index('Reader sync finished: ok') < text.index('Reader page restored after sync'),
         'no TLS failure or panic': not any(x in text for x in ('Guru Meditation', 'Upload transport failed',
                                                              'assert failed', 'Stack canary', 'panic_abort')),
     }

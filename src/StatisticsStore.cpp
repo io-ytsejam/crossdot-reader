@@ -108,6 +108,31 @@ void StatisticsStore::recordPageTurn() {
   refreshTodaySnapshot();
 }
 
+bool StatisticsStore::checkpointReading() {
+  if (!accumulator.isRunning()) return true;
+
+  const uint32_t nowMs = millis();
+  int64_t localEpoch = 0;
+  int32_t utcOffsetSeconds = 0;
+  if (!getLocalEpoch(localEpoch, &utcOffsetSeconds)) return false;
+
+  bool saved = true;
+  const auto& fragments = accumulator.finish(nowMs);
+  for (const auto& fragment : fragments) {
+    if (!appendSession(fragment, activeBookPath, activeBookTitle, activeBookAuthor, activeBookCoverBmpPath,
+                       activeUtcOffsetSeconds)) {
+      saved = false;
+    }
+  }
+
+  activeUtcOffsetSeconds = utcOffsetSeconds;
+  accumulator.begin(localEpoch, nowMs);
+  baselineDayNumber = ReadingTime::floorDay(localEpoch);
+  baselineSeconds = loadDay(baselineDayNumber).totalSeconds;
+  todayActiveSecondsSnapshot = baselineSeconds;
+  return saved;
+}
+
 float StatisticsStore::todayGoalProgress() const {
   return std::min(1.0f,
                   static_cast<float>(todayActiveSecondsSnapshot) / static_cast<float>(ReadingTime::DAILY_GOAL_SECONDS));

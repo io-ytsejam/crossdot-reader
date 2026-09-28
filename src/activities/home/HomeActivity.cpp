@@ -290,17 +290,13 @@ void HomeActivity::render(RenderLock&&) {
   renderer.clearScreen();
   bool bufferRestored = coverBufferStored && restoreCoverBuffer();
 
-  // Right-side header subtitle shows the cloud sync status when configured;
-  // otherwise the header stays clean for users who don't use the feature.
-  std::string syncSubtitle;
-  const char* subtitle = nullptr;
-  if (CLOUD_SYNC_SERVICE.isConfigured()) {
-    syncSubtitle = CLOUD_SYNC_SERVICE.getStatusLabel();
-    subtitle = syncSubtitle.c_str();
-  }
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.homeTopPadding},
+  const Rect homeHeaderRect{0, metrics.topPadding, pageWidth, metrics.homeTopPadding};
+  // The sync status is no longer passed as the header subtitle: in Lyra the
+  // subtitle slot sits at rect.y + 50, which Home's 56px header band puts inside
+  // the recent-book tile, so the tile highlight painted over it.
+  GUI.drawHeader(renderer, homeHeaderRect,
                  metrics.homeContinueReadingInMenu && !recentBooks.empty() ? recentBooks[0].title.c_str() : nullptr,
-                 subtitle);
+                 nullptr);
 
   // Record the tile rect so storeCoverBuffer (called from the theme) knows
   // which sub-region of the framebuffer to snapshot. ~16 KB in Portrait
@@ -313,6 +309,12 @@ void HomeActivity::render(RenderLock&&) {
   GUI.drawRecentBookCover(renderer, Rect{0, metrics.homeTopPadding, pageWidth, metrics.homeCoverTileHeight},
                           recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
                           std::bind(&HomeActivity::storeCoverBuffer, this));
+
+  // Drawn last so the top bar stays legible over the recent-book tile.
+  if (CLOUD_SYNC_SERVICE.isConfigured()) {
+    const std::string syncStatus = CLOUD_SYNC_SERVICE.getStatusLabel();
+    GUI.drawTopBarStatus(renderer, homeHeaderRect, syncStatus.c_str());
+  }
 
   // Build menu items dynamically
   std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_MENU_RECENT_BOOKS), tr(STR_FILE_TRANSFER),

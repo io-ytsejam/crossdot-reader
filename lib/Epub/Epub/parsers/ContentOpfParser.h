@@ -18,6 +18,7 @@ class ContentOpfParser final : public Print {
     IN_BOOK_TITLE,
     IN_BOOK_AUTHOR,
     IN_BOOK_LANGUAGE,
+    IN_BOOK_IDENTIFIER,
     IN_MANIFEST,
     IN_SPINE,
     IN_GUIDE,
@@ -32,6 +33,9 @@ class ContentOpfParser final : public Print {
   HalFile tempItemStore;
   std::string coverItemId;
   bool hasExplicitStartReference = false;
+  // Text of the dc:identifier element currently being parsed; finalized into
+  // `identifier` on its end tag, preferring a value that looks like an ISBN.
+  std::string identifierAccum;
 
   // Index for fast idref→href lookup (binary search over .items.bin)
   struct ItemIndexEntry {
@@ -60,6 +64,7 @@ class ContentOpfParser final : public Print {
   std::string title;
   std::string author;
   std::string language;
+  std::string identifier;
   std::string tocNcxPath;
   std::string tocNavPath;  // EPUB 3 nav document path
   std::string coverItemHref;
